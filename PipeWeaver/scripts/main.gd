@@ -20,6 +20,7 @@ var control_hard_corners: Array[bool] = []
 var control_angles: Array[float] = []
 var control_corner_segments: Array[int] = []
 var control_wall_offsets: Array[float] = []
+var control_colliders: Array = []
 var path_points: Array[Vector3] = []
 var path_normals: Array[Vector3] = []
 var path_wall_offsets: Array[float] = []
@@ -256,7 +257,7 @@ func _build_ui() -> void:
 	edit_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	edit_button.pressed.connect(_set_mode.bind("edit"))
 	mode_row.add_child(edit_button)
-	_add_hint(box, "Paint：点击现有管道插入点；空白拖动绘制\n编辑：拖动控制点，Shift/双击插入，Delete 删点\n蓝色 Z 轴：单独调整该节点离墙距离")
+	_add_hint(box, "起止点：可跨两个主体，自动选择最短贴合路径\nPaint：点击现有管道插入点；空白拖动绘制\n蓝色 Z 轴：单独调整该节点离墙距离")
 	_add_heading(box, "当前管道")
 	var pipe_lifecycle_row := HBoxContainer.new()
 	box.add_child(pipe_lifecycle_row)
@@ -533,6 +534,7 @@ func _new_pipe(new_mode: String = "endpoints") -> void:
 	control_angles.clear()
 	control_corner_segments.clear()
 	control_wall_offsets.clear()
+	control_colliders.clear()
 	path_points.clear()
 	path_normals.clear()
 	path_wall_offsets.clear()
@@ -559,18 +561,15 @@ func _endpoint_click(screen_position: Vector2) -> void:
 		return
 	if pending_start.is_empty():
 		pending_start = hit
-		status_label.text = "起点已设置，请点击同一表面的终点。"
+		status_label.text = "起点已设置；可在另一主体选择终点，自动计算最短贴合路径。"
 		_update_preview([], [])
 		_add_marker(hit["position"], hit["normal"])
-		return
-	if hit["collider"] != pending_start["collider"]:
-		status_label.text = "终点必须在起点所属的同一表面；请重新点击终点。"
 		return
 	var solved: Dictionary = SurfaceSolver.find_path(pending_start, hit)
 	if solved.has("error"):
 		status_label.text = solved["error"]
 		return
-	_commit_path(solved["points"], solved["normals"], hit["collider"], "起止点管道已生成")
+	_commit_path(solved["points"], solved["normals"], pending_start["collider"], "起止点管道已生成", solved.get("hard_corners", []), solved.get("colliders", []))
 
 func _begin_paint(screen_position: Vector2) -> void:
 	if pipe_finalized:
@@ -609,6 +608,7 @@ func _try_paint_insert(hit: Dictionary) -> bool:
 	control_angles.insert(insert_index, 90.0)
 	control_corner_segments.insert(insert_index, default_corner_segments)
 	control_wall_offsets.insert(insert_index, 0.0)
+	control_colliders.insert(insert_index, path_collider)
 	selected_control = insert_index
 	_rebuild_from_controls()
 	status_label.text = "已通过 Paint 在管道上插入控制点 %d；可继续点击路径添加。" % (insert_index + 1)
@@ -667,7 +667,7 @@ func _finish_paint() -> void:
 	if paint_crease_count > 0:
 		status_label.text = "Paint 管道已生成 · %d 个控制点 · %d 处自适应转角" % [control_points.size(), paint_crease_count]
 
-func _commit_path(points: Array, normals: Array, collider: CollisionObject3D, message: String, automatic_hard_corners: Array = []) -> void:
+func _commit_path(points: Array, normals: Array, collider: CollisionObject3D, message: String, automatic_hard_corners: Array = [], point_colliders: Array = []) -> void:
 	_remember_path()
 	control_points.assign(points)
 	control_normals.assign(normals)
@@ -675,11 +675,14 @@ func _commit_path(points: Array, normals: Array, collider: CollisionObject3D, me
 	control_angles.clear()
 	control_corner_segments.clear()
 	control_wall_offsets.clear()
+	control_colliders.clear()
+	control_colliders.clear()
 	for i in control_points.size():
 		control_hard_corners.append(automatic_hard_corners.size() == control_points.size() and automatic_hard_corners[i])
 		control_angles.append(90.0)
 		control_corner_segments.append(default_corner_segments)
 		control_wall_offsets.append(0.0)
+		control_colliders.append(point_colliders[i] if point_colliders.size() == control_points.size() else collider)
 	path_collider = collider
 	selected_control = -1
 	pending_start.clear()
@@ -698,7 +701,7 @@ func _rebuild_from_controls() -> void:
 		_update_preview([], [])
 		_update_control_settings()
 		return
-	var smoothed: Dictionary = SurfaceSolver.smooth_and_project(control_points, control_normals, path_collider, 0, get_world_3d().direct_space_state, control_hard_corners, control_corner_segments, control_wall_offsets)
+	var smoothed: Dictionary = SurfaceSolver.smooth_and_project(control_points, control_normals, path_collider, 0, get_world_3d().direct_space_state, control_hard_corners, control_corner_segments, control_wall_offsets, control_colliders)
 	path_points.assign(smoothed["points"])
 	path_normals.assign(smoothed["normals"])
 	path_wall_offsets.assign(smoothed["wall_offsets"])
@@ -784,9 +787,11 @@ func _apply_selected_angle() -> void:
 	var deflection: float = deg_to_rad(180.0 - control_angles[selected_control])
 	var direction: Vector3 = incoming.rotated(axis, turn_sign * deflection).normalized()
 	var candidate: Vector3 = control_points[selected_control] + direction * outgoing.length()
-	var projected: Dictionary = SurfaceSolver.project(candidate, control_normals[selected_control + 1], path_collider, get_world_3d().direct_space_state)
+	var next_surface: CollisionObject3D = control_colliders[selected_control + 1]
+	var current_surface: CollisionObject3D = control_colliders[selected_control]
+	var projected: Dictionary = SurfaceSolver.project(candidate, control_normals[selected_control + 1], next_surface, get_world_3d().direct_space_state)
 	if projected.is_empty():
-		projected = SurfaceSolver.project(candidate, control_normals[selected_control], path_collider, get_world_3d().direct_space_state)
+		projected = SurfaceSolver.project(candidate, control_normals[selected_control], current_surface, get_world_3d().direct_space_state)
 	if projected.is_empty():
 		status_label.text = "目标角度会离开当前表面，未应用。"
 		return
@@ -840,6 +845,7 @@ func _edit_button_down(screen_position: Vector2, insert: bool) -> void:
 		control_angles.pop_back()
 		control_corner_segments.pop_back()
 		control_wall_offsets.pop_back()
+		control_colliders.pop_back()
 		if not history.is_empty():
 			history.pop_back()
 		appended_control_on_click = false
@@ -876,6 +882,7 @@ func _edit_button_down(screen_position: Vector2, insert: bool) -> void:
 	control_angles.insert(insert_index, 90.0)
 	control_corner_segments.insert(insert_index, default_corner_segments)
 	control_wall_offsets.insert(insert_index, 0.0)
+	control_colliders.insert(insert_index, path_collider)
 	selected_control = insert_index
 	appended_control_on_click = not insert
 	_rebuild_from_controls()
@@ -889,7 +896,7 @@ func _drag_selected_control(screen_position: Vector2) -> void:
 	if selected_control < 0 or selected_control >= control_points.size():
 		return
 	var hit: Dictionary = _pick(screen_position)
-	if hit.is_empty() or hit["collider"] != path_collider:
+	if hit.is_empty() or hit["collider"] != control_colliders[selected_control]:
 		return
 	if control_points[selected_control].distance_squared_to(hit["position"]) < 0.000001:
 		return
@@ -932,6 +939,7 @@ func _delete_selected_control() -> void:
 	control_angles.remove_at(deleted)
 	control_corner_segments.remove_at(deleted)
 	control_wall_offsets.remove_at(deleted)
+	control_colliders.remove_at(deleted)
 	selected_control = -1
 	_rebuild_from_controls()
 	status_label.text = "已删除控制点 %d，剩余 %d 个。" % [deleted + 1, control_points.size()]
@@ -1065,6 +1073,7 @@ func _remember_path() -> void:
 		"angles": control_angles.duplicate(),
 		"corner_segments": control_corner_segments.duplicate(),
 		"wall_offsets": control_wall_offsets.duplicate(),
+		"colliders": control_colliders.duplicate(),
 		"collider": path_collider
 	})
 	if history.size() > 20:
@@ -1082,6 +1091,7 @@ func _undo() -> void:
 	control_angles.assign(previous["angles"])
 	control_corner_segments.assign(previous["corner_segments"])
 	control_wall_offsets.assign(previous["wall_offsets"])
+	control_colliders.assign(previous["colliders"])
 	path_collider = previous["collider"]
 	_rebuild_from_controls()
 	status_label.text = "已撤销到上一条路径。"
@@ -1098,6 +1108,7 @@ func _clear_path() -> void:
 	control_angles.clear()
 	control_corner_segments.clear()
 	control_wall_offsets.clear()
+	control_colliders.clear()
 	path_points.clear()
 	path_normals.clear()
 	path_wall_offsets.clear()

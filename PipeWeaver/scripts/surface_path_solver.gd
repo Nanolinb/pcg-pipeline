@@ -5,8 +5,11 @@ static var _cache: Dictionary = {}
 
 static func find_path(start: Dictionary, finish: Dictionary) -> Dictionary:
 	var collider = start.get("collider")
-	if collider == null or collider != finish.get("collider"):
-		return {"error": "起点和终点必须位于同一个碰撞表面。"}
+	var finish_collider = finish.get("collider")
+	if collider == null or finish_collider == null:
+		return {"error": "起止点必须位于有效的碰撞表面。"}
+	if collider != finish_collider:
+		return _find_path_across(start, finish)
 	var data: Dictionary = _surface_data(collider)
 	if data.is_empty():
 		return {"error": "该碰撞体没有可用于表面寻路的网格。"}
@@ -25,11 +28,86 @@ static func find_path(start: Dictionary, finish: Dictionary) -> Dictionary:
 		normals.append(data["normals"][id])
 	points.append(finish["position"])
 	normals.append(finish["normal"])
-	return {"points": points, "normals": normals, "collider": collider}
+	return {"points": points, "normals": normals, "collider": collider, "colliders": _fill_colliders(points, collider)}
 
-static func smooth_and_project(points: Array, normals: Array, collider: CollisionObject3D, iterations: int, space: PhysicsDirectSpaceState3D, hard_corners: Array = [], corner_segments: Array = [], wall_offsets: Array = []) -> Dictionary:
+static func _find_path_across(start: Dictionary, finish: Dictionary) -> Dictionary:
+	var collider_a: CollisionObject3D = start["collider"]
+	var collider_b: CollisionObject3D = finish["collider"]
+	var data_a: Dictionary = _surface_data(collider_a)
+	var data_b: Dictionary = _surface_data(collider_b)
+	if data_a.is_empty() or data_b.is_empty():
+		return {"error": "两个主体都必须具有可用于表面寻路的网格。"}
+	var candidates: Array = _connection_candidates(data_a, data_b)
+	var best: Dictionary = {}
+	for pair in candidates:
+		var bridge_a: Dictionary = _point_data(data_a, pair["a"], collider_a)
+		var bridge_b: Dictionary = _point_data(data_b, pair["b"], collider_b)
+		var path_a: Dictionary = find_path(start, bridge_a)
+		var path_b: Dictionary = find_path(bridge_b, finish)
+		if path_a.has("error") or path_b.has("error"):
+			continue
+		var total: float = _path_length(path_a["points"]) + pair["gap"] + _path_length(path_b["points"])
+		if not best.is_empty() and total >= best["total"]:
+			continue
+		var points: Array = path_a["points"].duplicate()
+		var normals: Array = path_a["normals"].duplicate()
+		var colliders: Array = path_a["colliders"].duplicate()
+		var hard_corners: Array = []
+		for i in points.size():
+			hard_corners.append(false)
+		var joint: int = points.size() - 1
+		hard_corners[joint] = true
+		if pair["gap"] > 0.001:
+			points.append(pair["b"])
+			normals.append(bridge_b["normal"])
+			colliders.append(collider_b)
+			hard_corners.append(true)
+		else:
+			normals[joint] = (normals[joint] + bridge_b["normal"]).normalized()
+		for i in range(1 if pair["gap"] <= 0.001 else 0, path_b["points"].size()):
+			points.append(path_b["points"][i])
+			normals.append(path_b["normals"][i])
+			colliders.append(collider_b)
+			hard_corners.append(false)
+		best = {"points": points, "normals": normals, "colliders": colliders, "hard_corners": hard_corners, "collider": collider_a, "total": total}
+	if best.is_empty():
+		return {"error": "无法找到两个主体之间的连通表面路径。"}
+	return best
+
+static func _connection_candidates(data_a: Dictionary, data_b: Dictionary) -> Array:
+	var pairs: Array = []
+	for i in data_a["triangles"].size():
+		var center: Vector3 = data_a["centers"][i]
+		for triangle in data_b["triangles"]:
+			var other: Vector3 = _closest_point_triangle(center, triangle[0], triangle[1], triangle[2])
+			pairs.append({"a": center, "b": other, "gap": center.distance_to(other)})
+	for i in data_b["triangles"].size():
+		var center: Vector3 = data_b["centers"][i]
+		for triangle in data_a["triangles"]:
+			var other: Vector3 = _closest_point_triangle(center, triangle[0], triangle[1], triangle[2])
+			pairs.append({"a": other, "b": center, "gap": center.distance_to(other)})
+	pairs.sort_custom(func(a, b): return a["gap"] < b["gap"])
+	return pairs
+
+static func _point_data(data: Dictionary, point: Vector3, collider: CollisionObject3D) -> Dictionary:
+	var face: int = _nearest_face(data["triangles"], point)
+	return {"position": point, "normal": data["normals"][face], "collider": collider}
+
+static func _path_length(points: Array) -> float:
+	var length: float = 0.0
+	for i in range(points.size() - 1):
+		length += points[i].distance_to(points[i + 1])
+	return length
+
+static func _fill_colliders(points: Array, collider: CollisionObject3D) -> Array:
+	var result: Array = []
+	for i in points.size():
+		result.append(collider)
+	return result
+
+static func smooth_and_project(points: Array, normals: Array, collider: CollisionObject3D, iterations: int, space: PhysicsDirectSpaceState3D, hard_corners: Array = [], corner_segments: Array = [], wall_offsets: Array = [], point_colliders: Array = []) -> Dictionary:
 	if corner_segments.size() == points.size():
-		return _fillet_and_project(points, normals, collider, space, hard_corners, corner_segments, wall_offsets)
+		return _fillet_and_project(points, normals, collider, space, hard_corners, corner_segments, wall_offsets, point_colliders)
 	if hard_corners.size() == points.size():
 		var boundaries: Array[int] = [0]
 		for i in range(1, points.size() - 1):
@@ -72,7 +150,7 @@ static func smooth_and_project(points: Array, normals: Array, collider: Collisio
 		current_normals = next_normals
 	return {"points": current_points, "normals": current_normals}
 
-static func _fillet_and_project(points: Array, normals: Array, collider: CollisionObject3D, space: PhysicsDirectSpaceState3D, hard_corners: Array, corner_segments: Array, wall_offsets: Array) -> Dictionary:
+static func _fillet_and_project(points: Array, normals: Array, collider: CollisionObject3D, space: PhysicsDirectSpaceState3D, hard_corners: Array, corner_segments: Array, wall_offsets: Array, point_colliders: Array) -> Dictionary:
 	var output_points: Array = [points[0]]
 	var output_normals: Array = [normals[0]]
 	var output_offsets: Array[float] = [wall_offsets[0] if wall_offsets.size() == points.size() else 0.0]
@@ -97,7 +175,8 @@ static func _fillet_and_project(points: Array, normals: Array, collider: Collisi
 				var start_offset: float = lerpf(wall_offsets[i], wall_offsets[i - 1], 0.25)
 				var finish_offset: float = lerpf(wall_offsets[i], wall_offsets[i + 1], 0.25)
 				offset = start_offset * (u * u) + wall_offsets[i] * (2.0 * u * t) + finish_offset * (t * t)
-			var projected: Dictionary = project(point, normal, collider, space)
+			var surface: CollisionObject3D = point_colliders[i] if point_colliders.size() == points.size() else collider
+			var projected: Dictionary = project(point, normal, surface, space)
 			if not projected.is_empty():
 				point = projected["position"]
 				normal = projected["normal"]
