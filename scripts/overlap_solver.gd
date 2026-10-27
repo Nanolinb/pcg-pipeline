@@ -16,8 +16,8 @@ static func solve(components: Array, dragged: Node3D = null) -> Dictionary:
 			if influencer == dragged:
 				influencer_scale = 1.0
 			var distance: float = target.wall.surface_distance(target.anchor, influencer.anchor)
-			var required: float = influencer.definition.footprint_radius() * influencer_scale + influencer.definition.overlap_gap
-			var available: float = (distance - required) / target.definition.footprint_radius()
+			var required: float = influencer.definition.footprint_radius() * influencer.user_scale * influencer_scale + influencer.definition.overlap_gap
+			var available: float = (distance - required) / (target.definition.footprint_radius() * target.user_scale)
 			allowed = minf(allowed, clampf(available, 0.0, 1.0))
 		scales[target.get_instance_id()] = allowed
 	return scales

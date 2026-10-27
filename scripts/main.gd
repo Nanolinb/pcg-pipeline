@@ -15,6 +15,10 @@ var catalog := PCGComponentCatalog.new()
 var components: Array[PCGSurfaceComponent] = []
 var selected: PCGSurfaceComponent
 var dragging_component: bool = false
+var handle_drag: String = ""
+var handle_start_mouse := Vector2.ZERO
+var handle_start_angle: float = 0.0
+var handle_start_scale: float = 1.0
 var orbiting: bool = false
 
 var library_drag_id: StringName = &""
@@ -24,7 +28,7 @@ var ghost_valid: bool = false
 var ghost_anchor := Vector2.ZERO
 
 var camera_target := Vector3(0.8, 2.3, 0.0)
-var camera_yaw: float = 0.32
+var camera_yaw: float = -0.28
 var camera_pitch: float = 0.22
 var camera_distance: float = 12.8
 
@@ -210,7 +214,7 @@ func _build_ui() -> void:
 	selected_threshold_label = _inspector_value(inspector, "")
 	selected_anchor_label = _inspector_value(inspector, "")
 	selected_state_label = _inspector_value(inspector, "")
-	_add_hint(inspector, "拖动已放置组件时仍保持吸附。\n高优先级组件挤压低优先级组件；\n拖动的组件始终保留自身尺寸。")
+	_add_hint(inspector, "拖动已放置组件时仍保持吸附。\n橙色球：上下拖动调整法线倾角。\n绿色方块：左右拖动等比缩放。\n0° 表示完全遵循主体表面法线。")
 	_add_heading(inspector, "融合方式")
 	_add_hint(inspector, "主体与组件采用封闭实体 CSG。\n先执行全部开洞差集，再执行窗框\n与玻璃并集。组件消失时移除开洞，\n主体墙面会真实恢复。")
 	wireframe_button = Button.new()
@@ -257,6 +261,15 @@ func _input(event: InputEvent) -> void:
 		elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 			_cancel_library_drag()
 			status_label.text = "已取消资产拖放。"
+			get_viewport().set_input_as_handled()
+		return
+	if not handle_drag.is_empty():
+		if event is InputEventMouseMotion and selected != null:
+			_drag_transform_handle(event.position)
+			get_viewport().set_input_as_handled()
+		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			handle_drag = ""
+			status_label.text = "组件变换已更新。"
 			get_viewport().set_input_as_handled()
 		return
 	if dragging_component:
@@ -342,7 +355,8 @@ func _update_library_drag(screen_position: Vector2) -> void:
 	ghost_valid = not hit.is_empty()
 	if ghost_valid:
 		ghost_anchor = ghost_host.clamp_anchor(hit["anchor"], definition)
-		ghost.global_transform = ghost_host.surface_transform(ghost_anchor)
+		var tilt := Transform3D(Basis(Vector3.RIGHT, deg_to_rad(definition.attachment_angle_degrees)), Vector3.ZERO)
+		ghost.global_transform = ghost_host.surface_transform(ghost_anchor) * tilt
 	else:
 		var view_plane := Plane(-camera.global_basis.z.normalized(), camera_target)
 		var point: Variant = view_plane.intersects_ray(origin, direction)
@@ -405,11 +419,40 @@ func _place_component(id: StringName, anchor: Vector2, host: PCGFusedWall = null
 	return component
 
 func _select_or_drag(screen_position: Vector2) -> void:
+	var handle := _pick_transform_handle(screen_position)
+	if not handle.is_empty() and selected != null:
+		handle_drag = handle
+		handle_start_mouse = screen_position
+		handle_start_angle = selected.attachment_angle_degrees
+		handle_start_scale = selected.user_scale
+		dragging_component = false
+		status_label.text = "拖动角度手柄：上下调整法线倾角" if handle == "angle" else "拖动缩放手柄：左右调整整体尺寸"
+		return
 	var component := _pick_component(screen_position)
 	_select_component(component)
 	if component != null:
 		dragging_component = true
 		status_label.text = "正在拖动「%s」· 表面吸附保持开启" % component.definition.display_name
+
+func _pick_transform_handle(screen_position: Vector2) -> String:
+	var origin := camera.project_ray_origin(screen_position)
+	var direction := camera.project_ray_normal(screen_position)
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * 100.0)
+	query.collide_with_areas = true
+	query.collide_with_bodies = false
+	query.collision_mask = 4
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return ""
+	return hit["collider"].get_meta("attachment_handle", "") as String
+
+func _drag_transform_handle(screen_position: Vector2) -> void:
+	var delta := screen_position - handle_start_mouse
+	if handle_drag == "angle":
+		_on_attachment_angle_changed(clampf(handle_start_angle - delta.y * 0.4, -90.0, 90.0))
+	elif handle_drag == "scale":
+		selected.set_user_scale(handle_start_scale + delta.x * 0.005)
+		_solve_neighborhood(selected)
 
 func _pick_component(screen_position: Vector2) -> PCGSurfaceComponent:
 	var origin := camera.project_ray_origin(screen_position)
@@ -461,6 +504,8 @@ func _update_inspector() -> void:
 		selected_threshold_label.text = ""
 		selected_anchor_label.text = ""
 		selected_state_label.text = ""
+		attachment_angle_spin.editable = false
+		attachment_angle_spin.set_value_no_signal(0.0)
 		return
 	selected_name_label.text = "%s · %s" % [selected.definition.display_name, selected.wall.display_name]
 	selected_scale_label.text = "当前尺寸：%d%%" % roundi(selected.current_scale * 100.0)
@@ -468,6 +513,15 @@ func _update_inspector() -> void:
 	selected_anchor_label.text = "表面锚点：%.2f, %.2f m" % [selected.anchor.x, selected.anchor.y]
 	selected_state_label.text = "状态：%s · 始终吸附" % ("已融合" if selected.active else "已消失 / 主体恢复")
 	selected_state_label.add_theme_color_override("font_color", Color("83e0b5") if selected.active else Color("ff9d79"))
+	attachment_angle_spin.editable = true
+	attachment_angle_spin.set_value_no_signal(selected.attachment_angle_degrees)
+
+func _on_attachment_angle_changed(value: float) -> void:
+	if selected == null:
+		return
+	selected.attachment_angle_degrees = value
+	selected.update_transform()
+	status_label.text = "法线倾角已设为 %.0f°；0° 表示完全遵循主体表面法线。" % value
 
 func _delete_selected() -> void:
 	if selected == null:
@@ -519,7 +573,7 @@ func _update_camera() -> void:
 
 func _reset_camera() -> void:
 	camera_target = Vector3(0.8, 2.3, 0.0)
-	camera_yaw = 0.32
+	camera_yaw = -0.28
 	camera_pitch = 0.22
 	camera_distance = 12.8
 	_update_camera()
@@ -616,6 +670,31 @@ func _run_smoke_test() -> void:
 	var angle := curved_anchor.x / cylinder_host.cylinder_radius
 	var expected_normal := (cylinder_host.global_basis * Vector3(sin(angle), 0.0, cos(angle))).normalized()
 	_smoke_check(cylinder_round.global_basis.z.normalized().dot(expected_normal) > 0.999, "圆柱拖动后组件应沿径向法线定向", failures)
+	_select_component(cylinder_round)
+	_on_attachment_angle_changed(25.0)
+	var tilted_normal := (cylinder_host.surface_transform(curved_anchor) * Transform3D(Basis(Vector3.RIGHT, deg_to_rad(25.0)), Vector3.ZERO)).basis.z.normalized()
+	_smoke_check(cylinder_round.global_basis.z.normalized().dot(tilted_normal) > 0.999, "法线倾角应旋转完整组件", failures)
+	_on_attachment_angle_changed(0.0)
+	cylinder_round.set_user_scale(1.5)
+	_solve_neighborhood(cylinder_round)
+	_smoke_check(is_equal_approx(cylinder_round.current_scale, 1.5), "用户缩放应与邻域缩放相乘", failures)
+	cylinder_round.set_user_scale(1.0)
+	_solve_neighborhood(cylinder_round)
+	if DisplayServer.get_name() != "headless":
+		await get_tree().physics_frame
+		var angle_handle_position := Vector3(0.0, cylinder_round.definition.size.y * 0.5 + 0.42, 0.14)
+		var angle_handle_screen := camera.unproject_position(cylinder_round.gizmo_root.to_global(angle_handle_position))
+		_smoke_check(_pick_transform_handle(angle_handle_screen) == "angle", "橙色手柄应可拾取", failures)
+		await _smoke_mouse_drag(angle_handle_screen, angle_handle_screen + Vector2(0.0, -50.0))
+		_smoke_check(absf(cylinder_round.attachment_angle_degrees - 20.0) < 0.01, "角度手柄应驱动法线倾角", failures)
+		var scale_handle_position := Vector3(cylinder_round.definition.size.x * 0.5 + 0.42, 0.0, 0.14)
+		var scale_handle_screen := camera.unproject_position(cylinder_round.gizmo_root.to_global(scale_handle_position))
+		_smoke_check(_pick_transform_handle(scale_handle_screen) == "scale", "绿色手柄应可拾取", failures)
+		await _smoke_mouse_drag(scale_handle_screen, scale_handle_screen + Vector2(100.0, 0.0))
+		_smoke_check(absf(cylinder_round.user_scale - 1.5) < 0.01, "缩放手柄应驱动用户等比缩放", failures)
+		_on_attachment_angle_changed(0.0)
+		cylinder_round.set_user_scale(1.0)
+		_solve_neighborhood(cylinder_round)
 	await get_tree().process_frame
 	await get_tree().process_frame
 	if failures.is_empty():
@@ -625,6 +704,29 @@ func _run_smoke_test() -> void:
 		for failure in failures:
 			push_error("SMOKE: " + failure)
 		get_tree().quit(1)
+
+func _smoke_mouse_drag(start: Vector2, finish: Vector2) -> void:
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = start
+	press.global_position = start
+	Input.parse_input_event(press)
+	await get_tree().process_frame
+	var motion := InputEventMouseMotion.new()
+	motion.position = finish
+	motion.global_position = finish
+	motion.relative = finish - start
+	motion.button_mask = MOUSE_BUTTON_MASK_LEFT
+	Input.parse_input_event(motion)
+	await get_tree().process_frame
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	release.position = finish
+	release.global_position = finish
+	Input.parse_input_event(release)
+	await get_tree().process_frame
 
 func _smoke_check(condition: bool, message: String, failures: PackedStringArray) -> void:
 	if not condition:

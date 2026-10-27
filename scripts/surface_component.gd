@@ -7,12 +7,15 @@ var definition: PCGComponentDefinition
 var wall: Node3D
 var anchor := Vector2.ZERO
 var attachment_angle_degrees: float = 0.0
+var user_scale: float = 1.0
+var neighborhood_scale: float = 1.0
 var current_scale: float = 1.0
 var active: bool = true
 var cutter: CSGShape3D
 var visuals: Array[CSGShape3D] = []
 var area: Area3D
 var selection_lines: MeshInstance3D
+var gizmo_root: Node3D
 
 func configure(component_definition: PCGComponentDefinition, host_wall: Node3D) -> void:
 	definition = component_definition
@@ -21,6 +24,7 @@ func configure(component_definition: PCGComponentDefinition, host_wall: Node3D) 
 	name = "Component_%s" % definition.id
 	_build_pick_area()
 	_build_selection()
+	_build_gizmos()
 	_build_csg()
 	update_transform()
 
@@ -72,6 +76,75 @@ func _build_selection() -> void:
 	selection_lines.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	selection_lines.visible = false
 	add_child(selection_lines)
+
+func _build_gizmos() -> void:
+	gizmo_root = Node3D.new()
+	gizmo_root.name = "TransformHandles"
+	gizmo_root.set_as_top_level(true)
+	gizmo_root.visible = false
+	add_child(gizmo_root)
+	var angle_position := Vector3(0.0, definition.size.y * 0.5 + 0.42, 0.14)
+	var scale_position := Vector3(definition.size.x * 0.5 + 0.42, 0.0, 0.14)
+	_create_handle("angle", angle_position, Color("ff9b55"), false)
+	_create_handle("scale", scale_position, Color("73e2a7"), true)
+	var lines := ImmediateMesh.new()
+	lines.surface_begin(Mesh.PRIMITIVE_LINES)
+	lines.surface_add_vertex(Vector3(0.0, 0.0, 0.14))
+	lines.surface_add_vertex(angle_position)
+	lines.surface_add_vertex(Vector3(0.0, 0.0, 0.14))
+	lines.surface_add_vertex(scale_position)
+	var radius := angle_position.y
+	for i in 36:
+		var a := -PI * 0.5 + PI * float(i) / 36.0
+		var b := -PI * 0.5 + PI * float(i + 1) / 36.0
+		lines.surface_add_vertex(Vector3(0.0, cos(a) * radius, sin(a) * radius + 0.14))
+		lines.surface_add_vertex(Vector3(0.0, cos(b) * radius, sin(b) * radius + 0.14))
+	lines.surface_end()
+	var line_instance := MeshInstance3D.new()
+	line_instance.mesh = lines
+	line_instance.material_override = _gizmo_material(Color("b8d5db"))
+	line_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	gizmo_root.add_child(line_instance)
+
+func _create_handle(kind: String, local_position: Vector3, color: Color, cube: bool) -> void:
+	var area_handle := Area3D.new()
+	area_handle.name = "%sHandle" % kind.capitalize()
+	area_handle.position = local_position
+	area_handle.collision_layer = 0
+	area_handle.collision_mask = 0
+	area_handle.monitoring = false
+	area_handle.monitorable = false
+	area_handle.set_meta("attachment_handle", kind)
+	area_handle.set_meta("surface_component", self)
+	var collision := CollisionShape3D.new()
+	var shape := SphereShape3D.new()
+	shape.radius = 0.15
+	collision.shape = shape
+	area_handle.add_child(collision)
+	gizmo_root.add_child(area_handle)
+	var instance := MeshInstance3D.new()
+	instance.position = local_position
+	if cube:
+		var mesh := BoxMesh.new()
+		mesh.size = Vector3.ONE * 0.19
+		instance.mesh = mesh
+	else:
+		var mesh := SphereMesh.new()
+		mesh.radius = 0.105
+		mesh.height = 0.21
+		mesh.radial_segments = 16
+		mesh.rings = 8
+		instance.mesh = mesh
+	instance.material_override = _gizmo_material(color)
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	gizmo_root.add_child(instance)
+
+func _gizmo_material(color: Color) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.no_depth_test = true
+	return material
 
 func _build_csg() -> void:
 	var opening := definition.opening_size()
@@ -137,7 +210,8 @@ func _register_shape(shape: CSGShape3D, local_position: Vector3, local_rotation:
 	shape.set_meta("component_local", Transform3D(Basis.from_euler(local_rotation), local_position))
 
 func apply_scale(value: float) -> void:
-	current_scale = clampf(value, 0.0, 1.0)
+	neighborhood_scale = clampf(value, 0.0, 1.0)
+	current_scale = clampf(neighborhood_scale * user_scale, 0.0, 2.0)
 	var should_be_active := current_scale >= definition.min_scale
 	if active != should_be_active:
 		active = should_be_active
@@ -146,8 +220,16 @@ func apply_scale(value: float) -> void:
 	area.collision_layer = 2 if active else 0
 	update_transform()
 
+func set_user_scale(value: float) -> void:
+	user_scale = clampf(value, 0.1, 2.0)
+	apply_scale(neighborhood_scale)
+
 func set_selected(value: bool) -> void:
 	selection_lines.visible = value and active
+	gizmo_root.visible = value
+	for child in gizmo_root.get_children():
+		if child is Area3D:
+			child.collision_layer = 4 if value else 0
 
 func update_transform() -> void:
 	if wall == null:
@@ -157,6 +239,8 @@ func update_transform() -> void:
 	scale = Vector3.ONE * current_scale
 	if selection_lines != null:
 		selection_lines.visible = selection_lines.visible and active
+	if gizmo_root != null:
+		gizmo_root.global_transform = wall.surface_transform(anchor)
 	for shape in visuals + [cutter]:
 		if shape.get_parent() != null:
 			shape.global_transform = global_transform * shape.get_meta("component_local") as Transform3D
