@@ -6,6 +6,7 @@ const SmoothMeshBuilder = preload("res://scripts/smooth_mesh_builder.gd")
 enum SurfaceKind {
 	PLANE,
 	CYLINDER,
+	DOME_CYLINDER,
 }
 
 var surface_kind: SurfaceKind = SurfaceKind.PLANE
@@ -20,7 +21,9 @@ var thickness: float:
 		return wall_size.z if surface_kind == SurfaceKind.PLANE else cylinder_depth
 var combiner: CSGCombiner3D
 var body: CSGShape3D
+var base_shapes: Array[CSGShape3D] = []
 var outline: MeshInstance3D
+var outline_parts: Array[MeshInstance3D] = []
 var render_mesh: MeshInstance3D
 var solid_mesh: ArrayMesh
 var wireframe_material: ShaderMaterial
@@ -33,25 +36,37 @@ func _ready() -> void:
 	combiner = CSGCombiner3D.new()
 	combiner.name = "WatertightFusion"
 	add_child(combiner)
-	if surface_kind == SurfaceKind.CYLINDER:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = body_color
+	material.roughness = 0.78
+	if surface_kind != SurfaceKind.PLANE:
 		var cylinder := CSGCylinder3D.new()
 		cylinder.radius = cylinder_radius
 		cylinder.height = cylinder_height
 		cylinder.sides = 64
 		body = cylinder
+		_add_base_shape(body, material)
+		if surface_kind == SurfaceKind.DOME_CYLINDER:
+			var dome := CSGSphere3D.new()
+			dome.radius = cylinder_radius
+			dome.radial_segments = 64
+			dome.rings = 32
+			dome.position.y = cylinder_height * 0.5
+			_add_base_shape(dome, material)
 	else:
 		var box := CSGBox3D.new()
 		box.size = wall_size
 		body = box
-	body.name = "SolidSurface"
-	body.operation = CSGShape3D.OPERATION_UNION
-	var material := StandardMaterial3D.new()
-	material.albedo_color = body_color
-	material.roughness = 0.78
-	body.material = material
-	combiner.add_child(body)
+		_add_base_shape(body, material)
 	_build_outline()
 	_build_render_mesh()
+
+func _add_base_shape(shape: CSGShape3D, material: Material) -> void:
+	shape.name = "SolidSurface"
+	shape.operation = CSGShape3D.OPERATION_UNION
+	shape.material = material
+	base_shapes.append(shape)
+	combiner.add_child(shape)
 
 func _build_render_mesh() -> void:
 	combiner.visible = false
@@ -89,35 +104,68 @@ func set_wireframe(enabled: bool) -> void:
 			render_mesh.mesh = SmoothMeshBuilder.build_wireframe(solid_mesh) if enabled else solid_mesh
 
 func _build_outline() -> void:
-	outline = MeshInstance3D.new()
-	outline.name = "AttachmentOutline"
-	if surface_kind == SurfaceKind.CYLINDER:
+	if surface_kind != SurfaceKind.PLANE:
 		var cylinder := CylinderMesh.new()
 		cylinder.top_radius = cylinder_radius
 		cylinder.bottom_radius = cylinder_radius
 		cylinder.height = cylinder_height
 		cylinder.radial_segments = 64
-		outline.mesh = cylinder
+		outline = _create_outline_part(cylinder, Vector3.ZERO)
+		if surface_kind == SurfaceKind.DOME_CYLINDER:
+			var dome := SphereMesh.new()
+			dome.radius = cylinder_radius
+			dome.height = cylinder_radius * 2.0
+			dome.radial_segments = 64
+			dome.rings = 32
+			_create_outline_part(dome, Vector3(0.0, cylinder_height * 0.5, 0.0))
 	else:
 		var box := BoxMesh.new()
 		box.size = wall_size
-		outline.mesh = box
-	var outline_material := ShaderMaterial.new()
-	outline_material.shader = preload("res://shaders/attachment_outline.gdshader")
-	outline.material_override = outline_material
-	outline.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	outline.visible = false
-	add_child(outline)
+		outline = _create_outline_part(box, Vector3.ZERO)
+
+func _create_outline_part(mesh: Mesh, local_position: Vector3) -> MeshInstance3D:
+	var part := MeshInstance3D.new()
+	part.name = "AttachmentOutline"
+	part.mesh = mesh
+	part.position = local_position
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/attachment_outline.gdshader")
+	part.material_override = material
+	part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	part.visible = false
+	outline_parts.append(part)
+	add_child(part)
+	return part
 
 func surface_transform(anchor: Vector2) -> Transform3D:
-	if surface_kind == SurfaceKind.CYLINDER:
+	if surface_kind != SurfaceKind.PLANE:
 		var angle := anchor.x / cylinder_radius
-		var basis := Basis(Vector3.UP, angle)
+		if surface_kind == SurfaceKind.DOME_CYLINDER and anchor.y > cylinder_height * 0.5:
+			var latitude := (anchor.y - cylinder_height * 0.5) / cylinder_radius
+			var normal := Vector3(sin(angle) * cos(latitude), sin(latitude), cos(angle) * cos(latitude)).normalized()
+			var point := Vector3(0.0, cylinder_height * 0.5, 0.0) + normal * cylinder_radius
+			return global_transform * Transform3D(_radial_basis(angle, normal), point)
 		var point := Vector3(sin(angle) * cylinder_radius, anchor.y, cos(angle) * cylinder_radius)
-		return global_transform * Transform3D(basis, point)
+		var normal := Vector3(sin(angle), 0.0, cos(angle))
+		return global_transform * Transform3D(_radial_basis(angle, normal), point)
 	return global_transform * Transform3D(Basis.IDENTITY, Vector3(anchor.x, anchor.y, thickness * 0.5))
 
+func _radial_basis(angle: float, normal: Vector3) -> Basis:
+	var x := Vector3(cos(angle), 0.0, -sin(angle)).normalized()
+	var y := normal.cross(x).normalized()
+	return Basis(x, y, normal)
+
 func ray_anchor(origin: Vector3, direction: Vector3) -> Dictionary:
+	if surface_kind == SurfaceKind.DOME_CYLINDER:
+		var cylinder_hit := _ray_cylinder(origin, direction)
+		var dome_hit := _ray_dome(origin, direction)
+		if cylinder_hit.is_empty():
+			return dome_hit
+		if dome_hit.is_empty():
+			return cylinder_hit
+		var cylinder_distance := origin.distance_to(cylinder_hit["position"])
+		var dome_distance := origin.distance_to(dome_hit["position"])
+		return dome_hit if dome_distance < cylinder_distance else cylinder_hit
 	if surface_kind == SurfaceKind.CYLINDER:
 		return _ray_cylinder(origin, direction)
 	var normal := global_basis.z.normalized()
@@ -159,12 +207,45 @@ func _ray_cylinder(origin: Vector3, direction: Vector3) -> Dictionary:
 		}
 	return {}
 
+func _ray_dome(origin: Vector3, direction: Vector3) -> Dictionary:
+	var local_origin := to_local(origin)
+	var local_direction := global_basis.inverse() * direction
+	var center := Vector3(0.0, cylinder_height * 0.5, 0.0)
+	var offset := local_origin - center
+	var a := local_direction.length_squared()
+	var b := 2.0 * offset.dot(local_direction)
+	var c := offset.length_squared() - cylinder_radius * cylinder_radius
+	var discriminant := b * b - 4.0 * a * c
+	if a < 0.0000001 or discriminant < 0.0:
+		return {}
+	var root := sqrt(discriminant)
+	var distances := [(-b - root) / (2.0 * a), (-b + root) / (2.0 * a)]
+	for distance in distances:
+		if distance < 0.0:
+			continue
+		var local_point: Vector3 = local_origin + local_direction * float(distance)
+		if local_point.y < cylinder_height * 0.5 - 0.0001:
+			continue
+		var local_normal := (local_point - center).normalized()
+		var latitude := atan2(local_point.y - center.y, Vector2(local_point.x, local_point.z).length())
+		var angle := atan2(local_point.x, local_point.z)
+		return {
+			"anchor": Vector2(angle * cylinder_radius, center.y + latitude * cylinder_radius),
+			"position": to_global(local_point),
+			"normal": (global_basis * local_normal).normalized(),
+			"host": self,
+		}
+	return {}
+
 func clamp_anchor(anchor: Vector2, definition: PCGComponentDefinition) -> Vector2:
-	if surface_kind == SurfaceKind.CYLINDER:
+	if surface_kind != SurfaceKind.PLANE:
 		var half_arc := PI * cylinder_radius
 		var wrapped_x := fposmod(anchor.x + half_arc, half_arc * 2.0) - half_arc
-		var height_limit := maxf(0.0, (cylinder_height - definition.size.y) * 0.5 - 0.05)
-		return Vector2(wrapped_x, clampf(anchor.y, -height_limit, height_limit))
+		var lower := -cylinder_height * 0.5 + definition.size.y * 0.5 + 0.05
+		var upper := cylinder_height * 0.5 - definition.size.y * 0.5 - 0.05
+		if surface_kind == SurfaceKind.DOME_CYLINDER:
+			upper = cylinder_height * 0.5 + cylinder_radius * PI * 0.5 - 0.05
+		return Vector2(wrapped_x, clampf(anchor.y, lower, maxf(lower, upper)))
 	var limits := Vector2(
 		maxf(0.0, (wall_size.x - definition.size.x) * 0.5 - 0.05),
 		maxf(0.0, (wall_size.y - definition.size.y) * 0.5 - 0.05)
@@ -172,7 +253,7 @@ func clamp_anchor(anchor: Vector2, definition: PCGComponentDefinition) -> Vector
 	return Vector2(clampf(anchor.x, -limits.x, limits.x), clampf(anchor.y, -limits.y, limits.y))
 
 func surface_distance(a: Vector2, b: Vector2) -> float:
-	if surface_kind == SurfaceKind.CYLINDER:
+	if surface_kind != SurfaceKind.PLANE:
 		var circumference := TAU * cylinder_radius
 		var arc_difference := absf(a.x - b.x)
 		arc_difference = minf(arc_difference, circumference - arc_difference)
@@ -180,13 +261,19 @@ func surface_distance(a: Vector2, b: Vector2) -> float:
 	return a.distance_to(b)
 
 func screen_rect(camera: Camera3D) -> Rect2:
-	var bounds := wall_size if surface_kind == SurfaceKind.PLANE else Vector3(cylinder_radius * 2.0, cylinder_height, cylinder_radius * 2.0)
+	var bounds := wall_size
+	var center := Vector3.ZERO
+	if surface_kind != SurfaceKind.PLANE:
+		bounds = Vector3(cylinder_radius * 2.0, cylinder_height, cylinder_radius * 2.0)
+		if surface_kind == SurfaceKind.DOME_CYLINDER:
+			bounds.y += cylinder_radius
+			center.y = cylinder_radius * 0.5
 	var first := true
 	var rect := Rect2()
 	for x in [-0.5, 0.5]:
 		for y in [-0.5, 0.5]:
 			for z in [-0.5, 0.5]:
-				var point := global_position + global_basis * (bounds * Vector3(x, y, z))
+				var point := global_position + global_basis * (center + bounds * Vector3(x, y, z))
 				if camera.is_position_behind(point):
 					return Rect2()
 				var projected := camera.unproject_position(point)
@@ -198,8 +285,8 @@ func screen_rect(camera: Camera3D) -> Rect2:
 	return rect
 
 func set_highlight(value: bool) -> void:
-	if outline != null:
-		outline.visible = value
+	for part in outline_parts:
+		part.visible = value
 
 func register_component(component: Node3D) -> void:
 	if not components.has(component):
@@ -233,8 +320,10 @@ func _detach_shapes(component: Node3D) -> void:
 func _reorder() -> void:
 	if combiner == null:
 		return
-	combiner.move_child(body, 0)
-	var index := 1
+	var index := 0
+	for shape in base_shapes:
+		combiner.move_child(shape, index)
+		index += 1
 	for component in components:
 		if component.active and component.cutter.get_parent() == combiner:
 			combiner.move_child(component.cutter, index)

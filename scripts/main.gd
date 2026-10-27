@@ -48,8 +48,8 @@ func _ready() -> void:
 	wall.position = Vector3(0.0, 2.5, 0.0)
 	add_child(wall)
 	cylinder_host = FusedWall.new()
-	cylinder_host.surface_kind = PCGFusedWall.SurfaceKind.CYLINDER
-	cylinder_host.display_name = "圆柱主体"
+	cylinder_host.surface_kind = PCGFusedWall.SurfaceKind.DOME_CYLINDER
+	cylinder_host.display_name = "半球圆柱主体"
 	cylinder_host.cylinder_radius = 1.2
 	cylinder_host.cylinder_height = 3.8
 	cylinder_host.body_color = Color("93654f")
@@ -127,7 +127,7 @@ func _build_ui() -> void:
 	title.add_theme_font_size_override("font_size", 22)
 	title_box.add_child(title)
 	status_label = Label.new()
-	status_label.text = "从左侧组件库拖入窗户；可吸附到平面墙或右侧圆柱。"
+	status_label.text = "从左侧拖入窗户；可吸附到平面墙或右侧半球圆柱，并拖过赤道。"
 	status_label.add_theme_color_override("font_color", Color("c2dce5"))
 	title_box.add_child(status_label)
 	stats_label = Label.new()
@@ -373,7 +373,7 @@ func _update_library_drag(screen_position: Vector2) -> void:
 	elif any_overlap:
 		status_label.text = "主体轮廓已高亮 · 将预览移到可吸附表面内"
 	else:
-		status_label.text = "将组件预览拖到平面墙或圆柱主体上"
+		status_label.text = "将组件预览拖到平面墙或半球圆柱主体上"
 
 func _finish_library_drag() -> void:
 	if library_drag_id.is_empty():
@@ -696,6 +696,20 @@ func _run_smoke_test() -> void:
 		_on_attachment_angle_changed(0.0)
 		cylinder_round.set_user_scale(1.0)
 		_solve_neighborhood(cylinder_round)
+	var equator := cylinder_host.cylinder_height * 0.5
+	var dome_anchor := Vector2(0.0, equator + 0.65)
+	var dome_transform := cylinder_host.surface_transform(dome_anchor)
+	var dome_hit := cylinder_host.ray_anchor(
+		dome_transform.origin + dome_transform.basis.z * 3.0,
+		-dome_transform.basis.z.normalized()
+	)
+	_smoke_check(not dome_hit.is_empty() and dome_hit["anchor"].distance_to(dome_anchor) < 0.01, "半球射线应返回连续球面锚点", failures)
+	var below_equator := cylinder_host.surface_transform(Vector2(0.0, equator - 0.001))
+	var above_equator := cylinder_host.surface_transform(Vector2(0.0, equator + 0.001))
+	_smoke_check(below_equator.origin.distance_to(above_equator.origin) < 0.01 and below_equator.basis.z.dot(above_equator.basis.z) > 0.999, "圆柱与半球在赤道处应连续", failures)
+	_move_component(cylinder_round, dome_anchor)
+	_smoke_check(cylinder_round.global_basis.z.normalized().dot(dome_transform.basis.z.normalized()) > 0.999, "组件在半球上应遵循球面法线", failures)
+	_smoke_check(cylinder_host.base_shapes.size() == 2 and cylinder_host.outline_parts.size() == 2, "组合主体应包含圆柱、半球实体与轮廓", failures)
 	await get_tree().process_frame
 	await get_tree().process_frame
 	for host in hosts:
