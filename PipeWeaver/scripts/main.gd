@@ -26,6 +26,8 @@ var path_wall_offsets: Array[float] = []
 var path_collider: CollisionObject3D
 var paint_points: Array[Vector3] = []
 var paint_normals: Array[Vector3] = []
+var paint_hard_corners: Array[bool] = []
+var paint_crease_count: int = 0
 var paint_collider: CollisionObject3D
 var pending_start: Dictionary = {}
 var painting: bool = false
@@ -41,6 +43,8 @@ var history: Array = []
 var current_pipe_id: int = 1
 var completed_pipe_count: int = 0
 var pipe_finalized: bool = false
+var generated_length: float = 0.0
+var generated_vertex_count: int = 0
 
 var segments: Array = [{"end": 1.0, "diameter": 0.34}]
 var radial_segments: int = 24
@@ -535,6 +539,8 @@ func _new_pipe(new_mode: String = "endpoints") -> void:
 	path_collider = null
 	paint_points.clear()
 	paint_normals.clear()
+	paint_hard_corners.clear()
+	paint_crease_count = 0
 	pending_start.clear()
 	selected_control = -1
 	history.clear()
@@ -578,6 +584,8 @@ func _begin_paint(screen_position: Vector2) -> void:
 	painting = true
 	paint_points = [hit["position"]]
 	paint_normals = [hit["normal"]]
+	paint_hard_corners = [false]
+	paint_crease_count = 0
 	paint_collider = hit["collider"]
 	_update_preview(paint_points, paint_normals)
 	status_label.text = "正在 Paint… 松开左键生成管道"
@@ -612,11 +620,42 @@ func _append_paint_point(screen_position: Vector2) -> void:
 		return
 	if paint_points[-1].distance_to(hit["position"]) < 0.16:
 		return
-	if paint_normals[-1].dot(hit["normal"]) < 0.1:
+	var normal_dot: float = paint_normals[-1].dot(hit["normal"])
+	if normal_dot < -0.25:
 		return
+	if normal_dot < 0.7071:
+		var crease: Dictionary = _surface_crease(paint_points[-1], paint_normals[-1], hit["position"], hit["normal"])
+		if not crease.is_empty():
+			paint_points.append(crease["position"])
+			paint_normals.append(crease["normal"])
+			paint_hard_corners.append(true)
+			paint_crease_count += 1
 	paint_points.append(hit["position"])
 	paint_normals.append(hit["normal"])
+	paint_hard_corners.append(false)
 	_update_preview(paint_points, paint_normals)
+
+func _surface_crease(first_point: Vector3, first_normal: Vector3, second_point: Vector3, second_normal: Vector3) -> Dictionary:
+	var n1: Vector3 = first_normal.normalized()
+	var n2: Vector3 = second_normal.normalized()
+	var direction: Vector3 = n1.cross(n2)
+	if direction.length_squared() < 0.001:
+		return {}
+	direction = direction.normalized()
+	var d1: float = n1.dot(first_point)
+	var d2: float = n2.dot(second_point)
+	var line_point: Vector3 = (n2.cross(direction) * d1 + direction.cross(n1) * d2) / direction.length_squared()
+	var midpoint: Vector3 = (first_point + second_point) * 0.5
+	var edge_point: Vector3 = line_point + direction * (midpoint - line_point).dot(direction)
+	if edge_point.distance_to(first_point) < 0.04 or edge_point.distance_to(second_point) < 0.04:
+		return {}
+	var average_normal: Vector3 = (n1 + n2).normalized()
+	var projected: Dictionary = SurfaceSolver.project(edge_point, average_normal, paint_collider, get_world_3d().direct_space_state)
+	if projected.is_empty():
+		projected = SurfaceSolver.project(edge_point, n1, paint_collider, get_world_3d().direct_space_state)
+	if projected.is_empty():
+		projected = SurfaceSolver.project(edge_point, n2, paint_collider, get_world_3d().direct_space_state)
+	return {"position": edge_point if projected.is_empty() else projected["position"], "normal": average_normal}
 
 func _finish_paint() -> void:
 	painting = false
@@ -624,9 +663,11 @@ func _finish_paint() -> void:
 		status_label.text = "Paint 路径太短，请按住左键拖出一段距离。"
 		_update_preview(path_points, path_normals)
 		return
-	_commit_path(paint_points, paint_normals, paint_collider, "Paint 管道已生成")
+	_commit_path(paint_points, paint_normals, paint_collider, "Paint 管道已生成", paint_hard_corners)
+	if paint_crease_count > 0:
+		status_label.text = "Paint 管道已生成 · %d 个控制点 · %d 处自适应转角" % [control_points.size(), paint_crease_count]
 
-func _commit_path(points: Array, normals: Array, collider: CollisionObject3D, message: String) -> void:
+func _commit_path(points: Array, normals: Array, collider: CollisionObject3D, message: String, automatic_hard_corners: Array = []) -> void:
 	_remember_path()
 	control_points.assign(points)
 	control_normals.assign(normals)
@@ -635,7 +676,7 @@ func _commit_path(points: Array, normals: Array, collider: CollisionObject3D, me
 	control_corner_segments.clear()
 	control_wall_offsets.clear()
 	for i in control_points.size():
-		control_hard_corners.append(false)
+		control_hard_corners.append(automatic_hard_corners.size() == control_points.size() and automatic_hard_corners[i])
 		control_angles.append(90.0)
 		control_corner_segments.append(default_corner_segments)
 		control_wall_offsets.append(0.0)
@@ -663,6 +704,7 @@ func _rebuild_from_controls() -> void:
 	path_wall_offsets.assign(smoothed["wall_offsets"])
 	_generate_pipe()
 	_add_hard_corner_connectors()
+	stats_label.text = "长度 %.2f m · %d 顶点 · %d 个接头" % [generated_length, generated_vertex_count, pipe_root.get_child_count() - 1]
 	_update_preview(path_points, path_normals)
 	_update_control_settings()
 
@@ -940,6 +982,8 @@ func _generate_pipe() -> void:
 	pipe_root.add_child(pipe)
 	for connector in result["connectors"]:
 		_create_connector(connector)
+	generated_length = result["length"]
+	generated_vertex_count = result["vertex_count"]
 	stats_label.text = "长度 %.2f m · %d 顶点 · %d 个接头" % [result["length"], result["vertex_count"], result["connectors"].size()]
 	print("PIPE_PCG_GENERATED length=%.3f vertices=%d connectors=%d segments=%d" % [result["length"], result["vertex_count"], result["connectors"].size(), segments.size()])
 
@@ -1073,6 +1117,8 @@ func _cancel_input() -> void:
 	pending_start.clear()
 	paint_points.clear()
 	paint_normals.clear()
+	paint_hard_corners.clear()
+	paint_crease_count = 0
 	_update_preview(path_points, path_normals)
 	_update_control_settings()
 
