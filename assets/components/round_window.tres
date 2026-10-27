@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="PCGComponentDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/component_definition.gd" id="1_definition"]
+
+[resource]
+script = ExtResource("1_definition")
+id = &"round_window"
+display_name = "圆形舷窗"
+category = "窗户"
+shape = 0
+size = Vector2(1.45, 1.45)
+depth = 0.38
+frame_width = 0.16
+min_scale = 0.38
+overlap_gap = 0.04
+priority = 10
+frame_color = Color(0.91, 0.48, 0.34, 1)
+glass_color = Color(0.19, 0.42, 0.45, 1)

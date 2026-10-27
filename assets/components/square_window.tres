@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="PCGComponentDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/component_definition.gd" id="1_definition"]
+
+[resource]
+script = ExtResource("1_definition")
+id = &"square_window"
+display_name = "方形窗"
+category = "窗户"
+shape = 1
+size = Vector2(1.15, 0.9)
+depth = 0.28
+frame_width = 0.12
+min_scale = 0.42
+overlap_gap = 0.04
+priority = 0
+frame_color = Color(0.96, 0.72, 0.4, 1)
+glass_color = Color(0.16, 0.35, 0.38, 1)
