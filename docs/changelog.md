@@ -1,5 +1,25 @@
 # 修改记录
 
+## 2026-10-28 · PCG 共享材质、世界尺度 UV 与 Chunk 合批
+
+### Surface Component PCG v0.6.0
+- 新增 Autoload 共享材质库，组件、主体、预览和编辑器材质按稳定 ID 复用，不再逐组件创建重复材质。
+- 组件资产增加框架/玻璃材质 ID 与贴图世界尺寸，并加入资产校验。
+- 程序圆环为外壁、内壁和前后端面建立独立 UV 接缝，按真实物理尺寸生成 UV0。
+- 平面、圆柱、半球主体及 CSG 切面按宿主表面重投影 UV；无材质切面显式继承宿主共享材质。
+- 最终实体和线框显示按 8m 空间 Chunk × 材质生成独立网格，保留 smooth groups、法线和 UV0。
+
+### PipeWeaver
+- 管体、接头、主体和编辑器材质统一由共享材质库管理，BaseColor、Detail、Detail Normal 与 ORM 贴图继续全局缓存。
+- 接头侧壁按圆周弧长/高度、端盖按物理平面坐标生成世界尺度 UV，与管体 UV0 规则一致。
+- AO 使用独立 UV2；未启用 AO 的管体共享材质，启用后仅按管道创建独立 AO 纹理变体，避免不同管道互相覆盖 AO。
+- 固定 Mesh 塌陷升级为 8m 空间 Chunk × 材质合批，保留 UV0、UV2、材质、变换及逐 Chunk 层 2 拾取。
+
+### 验证
+- 两个工程 Godot headless 导入与脚本解析通过，PipeWeaver 实际生成 625 顶点、4 个接头。
+- 根工程完整 smoke 通过，覆盖共享材质实例、圆环 UV、CSG、smooth groups、全部 Chunk 法线/UV 和线框切换。
+- 单一 PipeWeaver 图形实例完成选择、AO 烘焙、冻结/塌陷和恢复编辑；日志确认 `PIPE_BAKED id=1 chunks=4 materials=13`，重编辑后控制点正常恢复。
+
 ## 2026-10-27 · PipeWeaver 当前基线
 
 ### 工程与版本
@@ -136,3 +156,18 @@
 - 自动末端 UV V=3.077，等于 2m ÷ 0.65m，减面未造成贴图拉伸。
 - Godot 导入与初始生成检查通过。
 - 提交：`perf(pipeweaver): optimize straight pipe mesh subdivision`
+
+## 2026-10-28 · PipeWeaver PBR 平铺与每管 AO
+
+### 新增
+- Base Color、Detail Color、Detail Normal 与 ORM 分离，使用可平铺程序纹理，无外部资源依赖。
+- Detail 独立平铺倍率、混合强度和法线强度，Base 继续使用世界尺度 UV0。
+- 管体增加归一化 UV2，专用于每管 AO，避免光照图随 Base Tiling 重复。
+- 根据当前路径和接头位置烘焙独立 AO，接头遮蔽增强；AO 不等同完整全局光照。
+- 增加 PBR 面板、AO 开关/强度和烘焙按钮，烘焙后同步启用复选框。
+- PBR 与 AO 参数随每根管道保存和恢复，固定 Mesh 保留 UV2。
+
+### 验证
+- Godot 导入与初始 PBR 渲染通过。
+- 单窗口执行当前管道 AO 烘焙，状态确认接头遮蔽增强、UV2 独立。
+- 提交：`feat(pipeweaver): add tiled PBR materials and per-pipe AO baking`

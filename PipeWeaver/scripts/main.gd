@@ -2,6 +2,7 @@ extends Node3D
 
 const PipeBuilder = preload("res://scripts/pipe_mesh_builder.gd")
 const SurfaceSolver = preload("res://scripts/surface_path_solver.gd")
+const TextureLibrary = preload("res://scripts/pipe_texture_library.gd")
 
 var camera: Camera3D
 var pipe_root: Node3D
@@ -64,6 +65,13 @@ var mesh_optimization: Dictionary = {
 	"straight_angle": 3.0,
 	"manual_step": 0.18
 }
+var detail_tiling: float = 6.0
+var detail_strength: float = 0.28
+var normal_strength: float = 0.55
+var ao_strength: float = 0.0
+var baked_ao_texture: Texture2D
+var generated_connector_positions: Array = []
+var ao_toggle: CheckBox
 
 var camera_target := Vector3(0.0, 1.5, 0.0)
 var camera_yaw: float = 0.66
@@ -124,11 +132,8 @@ func _build_environment() -> void:
 	fill.light_energy = 0.45
 	add_child(fill)
 
-func _surface_material(color: Color, roughness: float = 0.82) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = roughness
-	return material
+func _surface_material(id: StringName, color: Color, roughness: float = 0.82, metallic: float = 0.0) -> StandardMaterial3D:
+	return MaterialLibrary.solid(id, color, roughness, metallic)
 
 func _build_surfaces() -> void:
 	_create_box("Ground", Vector3(14.0, 0.35, 11.0), Vector3(0.0, -0.2, 0.0), Color("35434b"))
@@ -146,7 +151,7 @@ func _create_box(label: String, size: Vector3, position: Vector3, color: Color) 
 	var mesh := BoxMesh.new()
 	mesh.size = size
 	mesh_instance.mesh = mesh
-	mesh_instance.material_override = _surface_material(color)
+	mesh_instance.material_override = _surface_material(StringName("host/%s" % label), color)
 	body.add_child(mesh_instance)
 	var collision := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
@@ -168,7 +173,7 @@ func _create_cylinder(label: String, radius: float, height: float, position: Vec
 	mesh.radial_segments = 48
 	mesh.rings = 1
 	mesh_instance.mesh = mesh
-	mesh_instance.material_override = _surface_material(color)
+	mesh_instance.material_override = _surface_material(StringName("host/%s" % label), color)
 	body.add_child(mesh_instance)
 	var collision := CollisionShape3D.new()
 	var shape := CylinderShape3D.new()
@@ -188,26 +193,19 @@ func _build_camera() -> void:
 	add_child(camera)
 
 func _build_materials() -> void:
-	pipe_material = ShaderMaterial.new()
-	pipe_material.shader = preload("res://shaders/pipe_grid.gdshader")
-	connector_material = _surface_material(Color("d29b45"), 0.3)
-	connector_material.metallic = 0.72
-	line_material = _surface_material(Color("ffe66d"))
-	line_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	line_material.no_depth_test = true
-	marker_material = _surface_material(Color("72f1b8"))
-	marker_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	marker_material.no_depth_test = true
-	selected_marker_material = _surface_material(Color("ff8a5b"))
-	selected_marker_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	selected_marker_material.no_depth_test = true
-	axis_material = _surface_material(Color("55a8ff"))
-	axis_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	axis_material.no_depth_test = true
-	selection_material = _surface_material(Color(1.0, 0.65, 0.1, 0.18))
-	selection_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	selection_material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	selection_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	pipe_material = MaterialLibrary.shader(&"pipe/body", preload("res://shaders/pipe_grid.gdshader"), {
+		"base_texture": TextureLibrary.base_color(),
+		"detail_texture": TextureLibrary.detail_color(),
+		"detail_normal_texture": TextureLibrary.detail_normal(),
+		"orm_texture": TextureLibrary.orm(),
+		"ao_texture": TextureLibrary.bake_ao([Vector3.ZERO, Vector3.ONE], []),
+	})
+	connector_material = _surface_material(&"pipe/connector", Color("d29b45"), 0.3, 0.72)
+	line_material = MaterialLibrary.unshaded(&"editor/path_line", Color("ffe66d"))
+	marker_material = MaterialLibrary.unshaded(&"editor/control_marker", Color("72f1b8"))
+	selected_marker_material = MaterialLibrary.unshaded(&"editor/control_marker_selected", Color("ff8a5b"))
+	axis_material = MaterialLibrary.unshaded(&"editor/wall_offset_axis", Color("55a8ff"))
+	selection_material = MaterialLibrary.unshaded(&"editor/pipe_selection", Color(1.0, 0.65, 0.1, 0.18), false, false, true, BaseMaterial3D.CULL_DISABLED)
 
 func _build_ui() -> void:
 	var canvas := CanvasLayer.new()
@@ -361,6 +359,21 @@ func _build_ui() -> void:
 	_add_spin(box, "直线角度阈值 °", 0.5, 15.0, 0.5, 3.0, _on_straight_angle_changed)
 	_add_spin(box, "手动统一步长 m", 0.02, 1.0, 0.01, 0.18, _on_manual_step_changed)
 	_add_hint(box, "变径与离墙变化段自动使用精细步长，UV 不拉伸")
+	_add_heading(box, "PBR 贴图")
+	_add_spin(box, "Detail 平铺倍率", 1.0, 16.0, 0.5, detail_tiling, _on_detail_tiling_changed)
+	_add_spin(box, "Detail 混合强度", 0.0, 1.0, 0.02, detail_strength, _on_detail_strength_changed)
+	_add_spin(box, "Detail Normal 强度", 0.0, 1.5, 0.05, normal_strength, _on_normal_strength_changed)
+	ao_toggle = CheckBox.new()
+	ao_toggle.text = "启用每管 AO 烘焙"
+	ao_toggle.button_pressed = false
+	ao_toggle.toggled.connect(_on_ao_toggled)
+	box.add_child(ao_toggle)
+	_add_spin(box, "AO 强度", 0.0, 1.0, 0.05, 0.6, _on_ao_strength_changed)
+	var bake_ao_button := Button.new()
+	bake_ao_button.text = "烘焙当前管道 AO"
+	bake_ao_button.pressed.connect(_bake_current_ao)
+	box.add_child(bake_ao_button)
+	_add_hint(box, "AO 使用独立 UV2，仅表示遮蔽，不是完整 GI")
 	_add_heading(box, "直径分段")
 	_add_hint(box, "终点按路径比例划分；最后一固定为 100%")
 	segments_box = VBoxContainer.new()
@@ -637,6 +650,17 @@ func _reedit_selected_pipe() -> void:
 	clearance = record["clearance"]
 	default_corner_segments = record["default_corner_segments"]
 	mesh_optimization = record.get("optimization", mesh_optimization).duplicate()
+	detail_tiling = record.get("detail_tiling", detail_tiling)
+	detail_strength = record.get("detail_strength", detail_strength)
+	normal_strength = record.get("normal_strength", normal_strength)
+	ao_strength = record.get("ao_strength", ao_strength)
+	baked_ao_texture = record.get("ao_texture", baked_ao_texture)
+	pipe_material.set_shader_parameter("detail_tiling", detail_tiling)
+	pipe_material.set_shader_parameter("detail_strength", detail_strength)
+	pipe_material.set_shader_parameter("normal_strength", normal_strength)
+	pipe_material.set_shader_parameter("ao_strength", ao_strength)
+	if baked_ao_texture != null:
+		pipe_material.set_shader_parameter("ao_texture", baked_ao_texture)
 	path_collider = control_colliders[0]
 	selected_control = -1
 	history.clear()
@@ -678,27 +702,24 @@ func _bake_pipe_root(source: Node3D, pipe_id: int) -> Node3D:
 	fixed.name = source.name + "_Fixed"
 	fixed.transform = source.transform
 	add_child(fixed)
-	var tools: Dictionary = {}
+	var baker := PCGMeshChunkBaker.new(8.0)
 	for child in source.get_children():
 		if not child is MeshInstance3D or child.mesh == null:
 			continue
 		var material: Material = child.material_override
 		if material == null:
 			material = pipe_material if child.name == "ContinuousPipe" else connector_material
-		var key: int = material.get_instance_id()
-		if not tools.has(key):
-			var tool := SurfaceTool.new()
-			tool.begin(Mesh.PRIMITIVE_TRIANGLES)
-			tool.set_material(material)
-			tools[key] = tool
-		for surface in child.mesh.get_surface_count():
-			tools[key].append_from(child.mesh, surface, child.transform)
-	for tool in tools.values():
+		baker.append(child.mesh, child.transform, material)
+	var chunks := baker.build()
+	for chunk in chunks:
 		var instance := MeshInstance3D.new()
-		instance.mesh = tool.commit()
+		var coord: Vector3i = chunk["coord"]
+		instance.name = "PipeChunk_%d_%d_%d" % [coord.x, coord.y, coord.z]
+		instance.mesh = chunk["mesh"]
 		fixed.add_child(instance)
-		if fixed.get_child_count() == 1:
-			_add_pipe_pick_body(fixed, instance.mesh, pipe_id)
+		_add_pipe_pick_body(fixed, instance.mesh, pipe_id)
+	fixed.set_meta("chunk_count", chunks.size())
+	print("PIPE_BAKED id=%d chunks=%d materials=%d" % [pipe_id, chunks.size(), MaterialLibrary.unique_material_count()])
 	source.get_parent().remove_child(source)
 	source.queue_free()
 	return fixed
@@ -722,6 +743,11 @@ func _sync_current_record() -> void:
 		"clearance": clearance,
 		"default_corner_segments": default_corner_segments,
 		"optimization": mesh_optimization.duplicate(),
+		"detail_tiling": detail_tiling,
+		"detail_strength": detail_strength,
+		"normal_strength": normal_strength,
+		"ao_strength": ao_strength,
+		"ao_texture": baked_ao_texture,
 		"finalized": pipe_finalized,
 		"baked": pipe_records.get(current_pipe_id, {}).get("baked", false)
 	}
@@ -1214,11 +1240,15 @@ func _generate_pipe() -> void:
 	var pipe := MeshInstance3D.new()
 	pipe.name = "ContinuousPipe"
 	pipe.mesh = result["mesh"]
-	pipe.material_override = pipe_material
 	pipe_root.add_child(pipe)
 	_add_pipe_pick_body(pipe_root, pipe.mesh, current_pipe_id)
+	generated_connector_positions.clear()
 	for connector in result["connectors"]:
+		generated_connector_positions.append(connector["position"])
 		_create_connector(connector)
+	if ao_strength > 0.0:
+		_update_ao_texture()
+	pipe.material_override = _current_pipe_material()
 	generated_length = result["length"]
 	generated_vertex_count = result["vertex_count"]
 	stats_label.text = "长度 %.2f m · %d 顶点 · %d 个接头" % [result["length"], result["vertex_count"], result["connectors"].size()]
@@ -1238,12 +1268,7 @@ func _add_pipe_pick_body(parent: Node3D, mesh: Mesh, pipe_id: int) -> void:
 func _create_connector(data: Dictionary) -> void:
 	var instance := MeshInstance3D.new()
 	instance.name = "Flange" if data["kind"] == "flange" else "EndpointCoupling"
-	var cylinder := CylinderMesh.new()
-	cylinder.top_radius = data["radius"]
-	cylinder.bottom_radius = data["radius"]
-	cylinder.height = data["height"]
-	cylinder.radial_segments = radial_segments
-	instance.mesh = cylinder
+	instance.mesh = PipeBuilder.connector_mesh(data, radial_segments, texture_world_size)
 	instance.material_override = connector_material
 	instance.position = data["position"]
 	instance.basis = Basis(Quaternion(Vector3.UP, data["tangent"]))
@@ -1434,6 +1459,64 @@ func _on_straight_angle_changed(value: float) -> void:
 func _on_manual_step_changed(value: float) -> void:
 	mesh_optimization["manual_step"] = value
 	_generate_pipe()
+
+func _on_detail_tiling_changed(value: float) -> void:
+	detail_tiling = value
+	MaterialLibrary.update_shaders(&"pipe/body", {"detail_tiling": value})
+
+func _on_detail_strength_changed(value: float) -> void:
+	detail_strength = value
+	MaterialLibrary.update_shaders(&"pipe/body", {"detail_strength": value})
+
+func _on_normal_strength_changed(value: float) -> void:
+	normal_strength = value
+	MaterialLibrary.update_shaders(&"pipe/body", {"normal_strength": value})
+
+func _on_ao_toggled(enabled: bool) -> void:
+	ao_strength = 0.6 if enabled else 0.0
+	_generate_pipe()
+
+func _on_ao_strength_changed(value: float) -> void:
+	ao_strength = value
+	_generate_pipe()
+
+func _bake_current_ao() -> void:
+	if path_points.size() < 2:
+		status_label.text = "请先生成一条管道，再烘焙 AO。"
+		return
+	_update_ao_texture()
+	ao_strength = 0.6
+	ao_toggle.button_pressed = true
+	var material := _current_pipe_material()
+	for child in pipe_root.get_children():
+		if child is MeshInstance3D and child.name == "ContinuousPipe":
+			child.material_override = material
+	status_label.text = "当前管道 AO 已烘焙：接头遮蔽增强，UV2 独立。"
+	print("PIPE_AO_BAKED connectors=%d" % generated_connector_positions.size())
+
+func _update_ao_texture() -> void:
+	baked_ao_texture = TextureLibrary.bake_ao(path_points, generated_connector_positions)
+
+func _current_pipe_material() -> ShaderMaterial:
+	if ao_strength <= 0.0:
+		return pipe_material
+	if baked_ao_texture == null:
+		_update_ao_texture()
+	var parameters := {
+		"base_texture": TextureLibrary.base_color(),
+		"detail_texture": TextureLibrary.detail_color(),
+		"detail_normal_texture": TextureLibrary.detail_normal(),
+		"orm_texture": TextureLibrary.orm(),
+		"ao_texture": baked_ao_texture,
+		"detail_tiling": detail_tiling,
+		"detail_strength": detail_strength,
+		"normal_strength": normal_strength,
+		"ao_strength": ao_strength,
+	}
+	var material := MaterialLibrary.shader(StringName("pipe/body_ao_%d" % current_pipe_id), pipe_material.shader, parameters)
+	for parameter in parameters:
+		material.set_shader_parameter(parameter, parameters[parameter])
+	return material
 
 func _on_clearance_changed(value: float) -> void:
 	clearance = value

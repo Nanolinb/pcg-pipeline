@@ -24,6 +24,7 @@ static func build(points: Array, surface_normals: Array, segments: Array, radial
 	var vertices := PackedVector3Array()
 	var normal_array := PackedVector3Array()
 	var uvs := PackedVector2Array()
+	var uv2s := PackedVector2Array()
 	var indices := PackedInt32Array()
 	var ring_size: int = radial_segments + 1
 	for i in centers.size():
@@ -38,6 +39,7 @@ static func build(points: Array, surface_normals: Array, segments: Array, radial
 			var u: float = radii[i] * TAU * float(j) / float(radial_segments) / texture_world_size
 			var v: float = distances[i] / texture_world_size
 			uvs.append(Vector2(u, v))
+			uv2s.append(Vector2(float(j) / float(radial_segments), distances[i] / maxf(distances[-1], 0.001)))
 	for i in range(centers.size() - 1):
 		for j in radial_segments:
 			var a: int = i * ring_size + j
@@ -50,6 +52,7 @@ static func build(points: Array, surface_normals: Array, segments: Array, radial
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_NORMAL] = normal_array
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_TEX_UV2] = uv2s
 	arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
@@ -162,6 +165,30 @@ static func _closest_distance_index(distances: Array, target: float) -> int:
 			best_distance = difference
 			best = i
 	return best
+
+static func connector_mesh(data: Dictionary, radial_segments: int, texture_world_size: float) -> ArrayMesh:
+	var cylinder := CylinderMesh.new()
+	cylinder.top_radius = data["radius"]
+	cylinder.bottom_radius = data["radius"]
+	cylinder.height = data["height"]
+	cylinder.radial_segments = radial_segments
+	var result := ArrayMesh.new()
+	var world_size := maxf(texture_world_size, 0.001)
+	for surface_index in cylinder.get_surface_count():
+		var arrays := cylinder.surface_get_arrays(surface_index)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var uvs := PackedVector2Array()
+		uvs.resize(vertices.size())
+		for index in vertices.size():
+			var point := vertices[index]
+			if absf(normals[index].y) > 0.7:
+				uvs[index] = Vector2(point.x, point.z) / world_size
+			else:
+				uvs[index] = Vector2(atan2(point.x, point.z) * float(data["radius"]), point.y) / world_size
+		arrays[Mesh.ARRAY_TEX_UV] = uvs
+		result.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return result
 
 static func _connector(position: Vector3, tangent: Vector3, radius: float, kind: String) -> Dictionary:
 	return {

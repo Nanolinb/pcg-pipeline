@@ -1,16 +1,26 @@
 shader_type spatial;
 render_mode diffuse_burley, specular_schlick_ggx;
 
-uniform vec4 base_color : source_color = vec4(0.24, 0.48, 0.55, 1.0);
-uniform vec4 grid_color : source_color = vec4(0.08, 0.16, 0.19, 1.0);
-uniform float metallic_amount = 0.55;
-uniform float roughness_amount = 0.38;
+uniform sampler2D base_texture : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D detail_texture : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D detail_normal_texture : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform sampler2D orm_texture : filter_linear_mipmap, repeat_enable;
+uniform sampler2D ao_texture : filter_linear_mipmap, repeat_disable;
+uniform float detail_tiling = 6.0;
+uniform float detail_strength = 0.28;
+uniform float normal_strength = 0.55;
+uniform float ao_strength = 0.0;
 
 void fragment() {
-	vec2 width = max(fwidth(UV), vec2(0.0001));
-	vec2 grid = abs(fract(UV - vec2(0.5)) - vec2(0.5)) / width;
-	float line = 1.0 - min(min(grid.x, grid.y), 1.0);
-	ALBEDO = mix(base_color.rgb, grid_color.rgb, line * 0.72);
-	METALLIC = metallic_amount;
-	ROUGHNESS = roughness_amount + line * 0.12;
+	vec3 base = texture(base_texture, UV).rgb;
+	vec3 detail = texture(detail_texture, UV * detail_tiling).rgb;
+	vec3 orm = texture(orm_texture, UV).rgb;
+	vec3 baked_ao = texture(ao_texture, UV2).rgb;
+	ALBEDO = base * mix(vec3(1.0), detail * 1.35, detail_strength);
+	ROUGHNESS = clamp(orm.g, 0.06, 1.0);
+	METALLIC = orm.b;
+	AO = orm.r * mix(1.0, baked_ao.r, ao_strength);
+	AO_LIGHT_AFFECT = 1.0;
+	NORMAL_MAP = texture(detail_normal_texture, UV * detail_tiling).rgb;
+	NORMAL_MAP_DEPTH = normal_strength;
 }
