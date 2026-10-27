@@ -13,6 +13,7 @@ var line_material: StandardMaterial3D
 var marker_material: StandardMaterial3D
 var selected_marker_material: StandardMaterial3D
 var axis_material: StandardMaterial3D
+var selection_material: StandardMaterial3D
 
 var control_points: Array[Vector3] = []
 var control_normals: Array[Vector3] = []
@@ -44,6 +45,9 @@ var history: Array = []
 var current_pipe_id: int = 1
 var completed_pipe_count: int = 0
 var pipe_finalized: bool = false
+var pipe_records: Dictionary = {}
+var selected_pipe_ids: Array[int] = []
+var multi_select_enabled: bool = false
 var generated_length: float = 0.0
 var generated_vertex_count: int = 0
 
@@ -64,6 +68,7 @@ var segments_box: VBoxContainer
 var endpoints_button: Button
 var paint_button: Button
 var edit_button: Button
+var select_button: Button
 var selected_control_label: Label
 var corner_mode_option: OptionButton
 var angle_spin: SpinBox
@@ -191,6 +196,10 @@ func _build_materials() -> void:
 	axis_material = _surface_material(Color("55a8ff"))
 	axis_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	axis_material.no_depth_test = true
+	selection_material = _surface_material(Color(1.0, 0.65, 0.1, 0.18))
+	selection_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	selection_material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	selection_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 
 func _build_ui() -> void:
 	var canvas := CanvasLayer.new()
@@ -257,6 +266,12 @@ func _build_ui() -> void:
 	edit_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	edit_button.pressed.connect(_set_mode.bind("edit"))
 	mode_row.add_child(edit_button)
+	select_button = Button.new()
+	select_button.text = "选择"
+	select_button.toggle_mode = true
+	select_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	select_button.pressed.connect(_set_mode.bind("select"))
+	mode_row.add_child(select_button)
 	_add_hint(box, "起止点：可跨两个主体，自动选择最短贴合路径\nPaint：点击现有管道插入点；空白拖动绘制\n蓝色 Z 轴：单独调整该节点离墙距离")
 	_add_heading(box, "当前管道")
 	var pipe_lifecycle_row := HBoxContainer.new()
@@ -274,6 +289,27 @@ func _build_ui() -> void:
 	new_pipe_button.pressed.connect(_new_pipe)
 	pipe_lifecycle_row.add_child(new_pipe_button)
 	_add_hint(box, "完成：冻结当前管体并隐藏控制点\n新建：保留旧管道，开始编辑下一根")
+	var pipe_action_row := HBoxContainer.new()
+	box.add_child(pipe_action_row)
+	var reedit_button := Button.new()
+	reedit_button.text = "重新编辑选中"
+	reedit_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	reedit_button.pressed.connect(_reedit_selected_pipe)
+	pipe_action_row.add_child(reedit_button)
+	var collapse_button := Button.new()
+	collapse_button.text = "塌陷为固定 Mesh"
+	collapse_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	collapse_button.pressed.connect(_collapse_selected_pipes)
+	pipe_action_row.add_child(collapse_button)
+	var multi_select_toggle := CheckBox.new()
+	multi_select_toggle.text = "允许多选（等同 Shift）"
+	multi_select_toggle.toggled.connect(func(enabled): multi_select_enabled = enabled)
+	box.add_child(multi_select_toggle)
+	var select_all_button := Button.new()
+	select_all_button.text = "全选所有管道"
+	select_all_button.pressed.connect(_select_all_pipes)
+	box.add_child(select_all_button)
+	_add_hint(box, "选择模式：单击单选，Shift 多选；塌陷支持多根")
 	_add_heading(box, "选中控制点")
 	selected_control_label = Label.new()
 	selected_control_label.text = "未选择中间节点"
@@ -428,6 +464,8 @@ func _unhandled_input(event: InputEvent) -> void:
 					status_label.text = "控制点 %d 离墙距离 %.2f m · 全局间隙 %.3f m" % [selected_control + 1, control_wall_offsets[selected_control], clearance]
 				elif dragging_control:
 					_edit_button_up()
+			elif mode == "select" and event.pressed:
+				_select_pipe_at(event.position, event.shift_pressed or multi_select_enabled)
 			elif event.pressed:
 				_endpoint_click(event.position)
 	elif event is InputEventMouseMotion:
@@ -472,6 +510,7 @@ func _pick(screen_position: Vector2) -> Dictionary:
 	var origin: Vector3 = camera.project_ray_origin(screen_position)
 	var direction: Vector3 = camera.project_ray_normal(screen_position)
 	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * 100.0)
+	query.collision_mask = 1
 	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
 	if not hit.is_empty() and hit["normal"].dot(direction) > 0.0:
 		hit["normal"] = -hit["normal"]
@@ -483,6 +522,7 @@ func _set_mode(new_mode: String) -> void:
 		endpoints_button.button_pressed = false
 		paint_button.button_pressed = false
 		edit_button.button_pressed = false
+		select_button.button_pressed = false
 		_cancel_input()
 		_clear_children(preview_root)
 		status_label.text = "当前管道已完成并冻结；请点击“新建管道”继续。"
@@ -491,15 +531,173 @@ func _set_mode(new_mode: String) -> void:
 	endpoints_button.button_pressed = mode == "endpoints"
 	paint_button.button_pressed = mode == "paint"
 	edit_button.button_pressed = mode == "edit"
+	select_button.button_pressed = mode == "select"
 	_cancel_input()
 	if mode == "endpoints":
 		status_label.text = "点击立体表面设置起点。"
 	elif mode == "paint":
 		status_label.text = "点击现有管道插入控制点；在空白表面拖动绘制新路径。"
+	elif mode == "select":
+		status_label.text = "单击选择管道，Shift 追加或移除多选。"
 	elif control_points.size() >= 2:
 		status_label.text = "拖动控制点；空白处追加，Shift/双击插入中间点。"
 	else:
 		status_label.text = "请先用起止点或 Paint 创建一条路径。"
+
+func _select_pipe_at(screen_position: Vector2, additive: bool) -> void:
+	var origin: Vector3 = camera.project_ray_origin(screen_position)
+	var direction: Vector3 = camera.project_ray_normal(screen_position)
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * 100.0)
+	query.collision_mask = 2
+	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(query)
+	var pipe_id: int = -1 if hit.is_empty() else int(hit["collider"].get_meta("pipe_id", -1))
+	if not additive:
+		selected_pipe_ids.clear()
+	if pipe_id >= 0:
+		if additive and selected_pipe_ids.has(pipe_id):
+			selected_pipe_ids.erase(pipe_id)
+		elif not selected_pipe_ids.has(pipe_id):
+			selected_pipe_ids.append(pipe_id)
+	_update_selection_visuals()
+
+func _select_all_pipes() -> void:
+	selected_pipe_ids.clear()
+	for id in pipe_records:
+		selected_pipe_ids.append(id)
+	if not pipe_records.has(current_pipe_id) and control_points.size() >= 2:
+		selected_pipe_ids.append(current_pipe_id)
+	_update_selection_visuals()
+
+func _update_selection_visuals() -> void:
+	for id in pipe_records:
+		_set_root_selected(pipe_records[id]["root"], selected_pipe_ids.has(id))
+	if pipe_root != null and not pipe_records.has(current_pipe_id):
+		_set_root_selected(pipe_root, selected_pipe_ids.has(current_pipe_id))
+	status_label.text = "已选中 %d 根管道；可重新编辑单选或批量塌陷。" % selected_pipe_ids.size()
+
+func _set_root_selected(root: Node3D, selected: bool) -> void:
+	if root == null:
+		return
+	for child in root.get_children():
+		if child is MeshInstance3D:
+			child.material_overlay = selection_material if selected else null
+
+func _reedit_selected_pipe() -> void:
+	if selected_pipe_ids.size() != 1:
+		status_label.text = "重新编辑需要且只能选择一根管道。"
+		return
+	var id: int = selected_pipe_ids[0]
+	if id == current_pipe_id and control_points.size() >= 2:
+		pipe_finalized = false
+		_set_mode("edit")
+		return
+	if not pipe_records.has(id):
+		status_label.text = "该管道还没有可恢复的 PCG 数据。"
+		return
+	if not pipe_finalized and control_points.size() >= 2 and id != current_pipe_id:
+		_finish_current_pipe()
+	var record: Dictionary = pipe_records[id]
+	current_pipe_id = id
+	pipe_root = record["root"]
+	control_points.assign(record["points"])
+	control_normals.assign(record["normals"])
+	control_hard_corners.assign(record["hard_corners"])
+	control_angles.assign(record["angles"])
+	control_corner_segments.assign(record["corner_segments"])
+	control_wall_offsets.assign(record["wall_offsets"])
+	control_colliders.assign(record["colliders"])
+	segments = record["segments"].duplicate(true)
+	radial_segments = record["radial_segments"]
+	texture_world_size = record["texture_world_size"]
+	clearance = record["clearance"]
+	default_corner_segments = record["default_corner_segments"]
+	path_collider = control_colliders[0]
+	selected_control = -1
+	history.clear()
+	pipe_finalized = false
+	record["finalized"] = false
+	record["baked"] = false
+	_rebuild_segment_rows()
+	_rebuild_from_controls()
+	_set_mode("edit")
+	status_label.text = "%s 已恢复完整 PCG 数据，可继续编辑。" % pipe_root.name
+
+func _collapse_selected_pipes() -> void:
+	if selected_pipe_ids.is_empty():
+		status_label.text = "请先在选择模式选中一根或多根管道。"
+		return
+	if selected_pipe_ids.has(current_pipe_id) and not pipe_finalized:
+		_finish_current_pipe()
+	var baked_count: int = 0
+	for id in selected_pipe_ids:
+		if not pipe_records.has(id):
+			continue
+		var record: Dictionary = pipe_records[id]
+		if record["baked"]:
+			continue
+		record["root"] = _bake_pipe_root(record["root"], id)
+		record["baked"] = true
+		record["finalized"] = true
+		if id == current_pipe_id:
+			pipe_root = record["root"]
+			pipe_finalized = true
+			mode = "finished"
+			_clear_children(preview_root)
+		baked_count += 1
+	_update_selection_visuals()
+	status_label.text = "已将 %d 根管道塌陷为固定 Mesh；PCG 数据仍保留，可恢复编辑。" % baked_count
+
+func _bake_pipe_root(source: Node3D, pipe_id: int) -> Node3D:
+	var fixed := Node3D.new()
+	fixed.name = source.name + "_Fixed"
+	fixed.transform = source.transform
+	add_child(fixed)
+	var tools: Dictionary = {}
+	for child in source.get_children():
+		if not child is MeshInstance3D or child.mesh == null:
+			continue
+		var material: Material = child.material_override
+		if material == null:
+			material = pipe_material if child.name == "ContinuousPipe" else connector_material
+		var key: int = material.get_instance_id()
+		if not tools.has(key):
+			var tool := SurfaceTool.new()
+			tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+			tool.set_material(material)
+			tools[key] = tool
+		for surface in child.mesh.get_surface_count():
+			tools[key].append_from(child.mesh, surface, child.transform)
+	for tool in tools.values():
+		var instance := MeshInstance3D.new()
+		instance.mesh = tool.commit()
+		fixed.add_child(instance)
+		if fixed.get_child_count() == 1:
+			_add_pipe_pick_body(fixed, instance.mesh, pipe_id)
+	source.get_parent().remove_child(source)
+	source.queue_free()
+	return fixed
+
+func _sync_current_record() -> void:
+	if pipe_root == null or control_points.size() < 2:
+		return
+	pipe_records[current_pipe_id] = {
+		"id": current_pipe_id,
+		"root": pipe_root,
+		"points": control_points.duplicate(),
+		"normals": control_normals.duplicate(),
+		"hard_corners": control_hard_corners.duplicate(),
+		"angles": control_angles.duplicate(),
+		"corner_segments": control_corner_segments.duplicate(),
+		"wall_offsets": control_wall_offsets.duplicate(),
+		"colliders": control_colliders.duplicate(),
+		"segments": segments.duplicate(true),
+		"radial_segments": radial_segments,
+		"texture_world_size": texture_world_size,
+		"clearance": clearance,
+		"default_corner_segments": default_corner_segments,
+		"finalized": pipe_finalized,
+		"baked": pipe_records.get(current_pipe_id, {}).get("baked", false)
+	}
 
 func _finish_current_pipe() -> void:
 	if pipe_finalized:
@@ -510,12 +708,15 @@ func _finish_current_pipe() -> void:
 		return
 	_cancel_input()
 	pipe_finalized = true
+	_sync_current_record()
+	pipe_records[current_pipe_id]["finalized"] = true
 	mode = "finished"
 	history.clear()
 	completed_pipe_count += 1
 	endpoints_button.button_pressed = false
 	paint_button.button_pressed = false
 	edit_button.button_pressed = false
+	select_button.button_pressed = false
 	_clear_children(preview_root)
 	status_label.text = "%s 已完成并停止编辑；新建管道不会覆盖它。" % pipe_root.name
 	stats_label.text = "已完成 %d 根管道 · 当前管体已冻结" % completed_pipe_count
@@ -707,7 +908,7 @@ func _rebuild_from_controls() -> void:
 	path_wall_offsets.assign(smoothed["wall_offsets"])
 	_generate_pipe()
 	_add_hard_corner_connectors()
-	stats_label.text = "长度 %.2f m · %d 顶点 · %d 个接头" % [generated_length, generated_vertex_count, pipe_root.get_child_count() - 1]
+	stats_label.text = "长度 %.2f m · %d 顶点 · %d 个接头" % [generated_length, generated_vertex_count, pipe_root.get_child_count() - 2]
 	_update_preview(path_points, path_normals)
 	_update_control_settings()
 
@@ -988,12 +1189,24 @@ func _generate_pipe() -> void:
 	pipe.mesh = result["mesh"]
 	pipe.material_override = pipe_material
 	pipe_root.add_child(pipe)
+	_add_pipe_pick_body(pipe_root, pipe.mesh, current_pipe_id)
 	for connector in result["connectors"]:
 		_create_connector(connector)
 	generated_length = result["length"]
 	generated_vertex_count = result["vertex_count"]
 	stats_label.text = "长度 %.2f m · %d 顶点 · %d 个接头" % [result["length"], result["vertex_count"], result["connectors"].size()]
 	print("PIPE_PCG_GENERATED length=%.3f vertices=%d connectors=%d segments=%d" % [result["length"], result["vertex_count"], result["connectors"].size(), segments.size()])
+
+func _add_pipe_pick_body(parent: Node3D, mesh: Mesh, pipe_id: int) -> void:
+	var body := StaticBody3D.new()
+	body.name = "PipePickBody"
+	body.collision_layer = 2
+	body.collision_mask = 0
+	body.set_meta("pipe_id", pipe_id)
+	var collision := CollisionShape3D.new()
+	collision.shape = mesh.create_trimesh_shape()
+	body.add_child(collision)
+	parent.add_child(body)
 
 func _create_connector(data: Dictionary) -> void:
 	var instance := MeshInstance3D.new()
