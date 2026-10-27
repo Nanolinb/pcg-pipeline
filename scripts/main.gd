@@ -579,9 +579,10 @@ func _reset_camera() -> void:
 	_update_camera()
 
 func _toggle_wireframe(enabled: bool) -> void:
-	get_viewport().debug_draw = Viewport.DEBUG_DRAW_WIREFRAME if enabled else Viewport.DEBUG_DRAW_DISABLED
+	for host in hosts:
+		host.set_wireframe(enabled)
 	wireframe_button.text = "水密线框：%s (G)" % ("开" if enabled else "关")
-	status_label.text = "已切换为线框检查；再次按 G 恢复实体显示。" if enabled else "已恢复实体材质显示。"
+	status_label.text = "已切换为最终融合网格线框；再次按 G 恢复实体显示。" if enabled else "已恢复实体材质显示。"
 
 func _screen_for_anchor(anchor: Vector2) -> Vector2:
 	return camera.unproject_position(wall.surface_transform(anchor).origin)
@@ -697,8 +698,25 @@ func _run_smoke_test() -> void:
 		_solve_neighborhood(cylinder_round)
 	await get_tree().process_frame
 	await get_tree().process_frame
+	for host in hosts:
+		_smoke_check(host.render_mesh.mesh != null, "最终平滑渲染网格应已生成", failures)
+		if host.render_mesh.mesh != null:
+			var normals_valid := true
+			for surface in host.render_mesh.mesh.get_surface_count():
+				var arrays := host.render_mesh.mesh.surface_get_arrays(surface)
+				var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL] if arrays[Mesh.ARRAY_NORMAL] != null else PackedVector3Array()
+				if normals.is_empty():
+					normals_valid = false
+				for normal in normals:
+					if absf(normal.length() - 1.0) > 0.001:
+						normals_valid = false
+			_smoke_check(normals_valid, "最终网格应包含有效单位法线", failures)
+	_toggle_wireframe(true)
+	_smoke_check(wall.render_mesh.material_override == wall.wireframe_material and cylinder_host.render_mesh.material_override == cylinder_host.wireframe_material, "线框开关应作用于两个最终渲染网格", failures)
+	_toggle_wireframe(false)
+	_smoke_check(wall.render_mesh.material_override == null and cylinder_host.render_mesh.material_override == null, "关闭线框应恢复表面材质", failures)
 	if failures.is_empty():
-		print("PCG_SMOKE_TEST_PASS: dual hosts, plane/cylinder drag, outline, snapping, isolated shrink, recovery, CSG meshes")
+		print("PCG_SMOKE_TEST_PASS: dual hosts, smoothed CSG render, visible wireframe material, snapping, handles, isolated shrink")
 		get_tree().quit(0)
 	else:
 		for failure in failures:

@@ -55,3 +55,21 @@
 - 单窗口从顶面一笔拖至前侧面，生成 18 个控制点和 1 处自适应转角。
 - 管道长度 3.336m，跨面后无异常延伸；Godot 导入与初始生成检查通过。
 - 提交：`feat(pipeweaver): support cross-face paint and adaptive elbows`
+
+## 2026-10-27 · Surface Component PCG v0.4.1
+
+### 修复
+- 不再依赖 Compatibility 渲染器下不可见的视口 wireframe 调试绘制。
+- 使用 UV2 重心坐标和屏幕导数绘制最终融合网格的真实三角边线。
+- CSG 原始渲染与最终显示分离，布尔拓扑保持不变。
+- 按量化位置、面夹角和面积加权法线重建 smooth groups。
+- 圆柱侧面连续平滑，端盖、开洞壁与窗框端面在大夹角处保留硬边。
+- 组件移动、旋转、缩放、消失和删除后同步刷新最终显示网格。
+
+### 验证
+- headless 与真实图形视口 smoke 通过，包含最终网格、单位法线与线框切换断言。
+- 实际截图确认墙面、圆柱和圆窗开洞的三角线框可见。
+- 实体模式截图确认圆柱侧面恢复平滑光照，开洞与窗框硬边清晰。
+
+### 提交
+- `fix(components): rebuild CSG normals and wireframe`

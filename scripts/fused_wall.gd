@@ -1,6 +1,8 @@
 class_name PCGFusedWall
 extends Node3D
 
+const SmoothMeshBuilder = preload("res://scripts/smooth_mesh_builder.gd")
+
 enum SurfaceKind {
 	PLANE,
 	CYLINDER,
@@ -19,6 +21,11 @@ var thickness: float:
 var combiner: CSGCombiner3D
 var body: CSGShape3D
 var outline: MeshInstance3D
+var render_mesh: MeshInstance3D
+var solid_mesh: ArrayMesh
+var wireframe_material: ShaderMaterial
+var wireframe_enabled: bool = false
+var render_dirty: bool = true
 var components: Array = []
 
 func _ready() -> void:
@@ -44,6 +51,42 @@ func _ready() -> void:
 	body.material = material
 	combiner.add_child(body)
 	_build_outline()
+	_build_render_mesh()
+
+func _build_render_mesh() -> void:
+	combiner.visible = false
+	render_mesh = MeshInstance3D.new()
+	render_mesh.name = "SmoothedFusionRender"
+	add_child(render_mesh)
+	wireframe_material = ShaderMaterial.new()
+	wireframe_material.shader = preload("res://shaders/wireframe.gdshader")
+	mark_geometry_dirty()
+
+func mark_geometry_dirty() -> void:
+	render_dirty = true
+
+func _process(_delta: float) -> void:
+	if render_dirty:
+		render_dirty = false
+		call_deferred("_refresh_render_mesh")
+
+func _refresh_render_mesh() -> void:
+	if not is_inside_tree() or combiner == null:
+		return
+	var meshes := combiner.get_meshes()
+	if meshes.size() < 2 or not meshes[1] is Mesh:
+		render_dirty = true
+		return
+	render_mesh.transform = meshes[0]
+	solid_mesh = SmoothMeshBuilder.rebuild(meshes[1])
+	render_mesh.mesh = SmoothMeshBuilder.build_wireframe(solid_mesh) if wireframe_enabled else solid_mesh
+
+func set_wireframe(enabled: bool) -> void:
+	wireframe_enabled = enabled
+	if render_mesh != null:
+		render_mesh.material_override = wireframe_material if enabled else null
+		if solid_mesh != null:
+			render_mesh.mesh = SmoothMeshBuilder.build_wireframe(solid_mesh) if enabled else solid_mesh
 
 func _build_outline() -> void:
 	outline = MeshInstance3D.new()
@@ -167,6 +210,7 @@ func unregister_component(component: Node3D) -> void:
 	_detach_shapes(component)
 	components.erase(component)
 	_reorder()
+	mark_geometry_dirty()
 
 func set_component_active(component: Node3D, value: bool) -> void:
 	if value:
@@ -174,6 +218,7 @@ func set_component_active(component: Node3D, value: bool) -> void:
 	else:
 		_detach_shapes(component)
 	_reorder()
+	mark_geometry_dirty()
 
 func _attach_shapes(component: Node3D) -> void:
 	for shape in component.visuals + [component.cutter]:

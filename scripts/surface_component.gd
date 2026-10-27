@@ -244,6 +244,7 @@ func update_transform() -> void:
 	for shape in visuals + [cutter]:
 		if shape.get_parent() != null:
 			shape.global_transform = global_transform * shape.get_meta("component_local") as Transform3D
+	wall.mark_geometry_dirty()
 
 static func make_preview(component_definition: PCGComponentDefinition) -> Node3D:
 	var root := Node3D.new()
