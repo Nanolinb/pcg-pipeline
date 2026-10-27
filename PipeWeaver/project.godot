@@ -3,6 +3,10 @@ config/name="PipeWeaver · 管道 PCG"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 
+[autoload]
+
+MaterialLibrary="*res://scripts/material_library.gd"
+
 [display]
 window/size/viewport_width=1440
 window/size/viewport_height=900

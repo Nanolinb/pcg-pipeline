@@ -56,6 +56,14 @@ var radial_segments: int = 24
 var texture_world_size: float = 0.65
 var clearance: float = 0.035
 var default_corner_segments: int = 8
+var mesh_optimization: Dictionary = {
+	"auto": true,
+	"texture_link": true,
+	"straight_step": 4.0,
+	"curve_step": 0.28,
+	"straight_angle": 3.0,
+	"manual_step": 0.18
+}
 
 var camera_target := Vector3(0.0, 1.5, 0.0)
 var camera_yaw: float = 0.66
@@ -336,6 +344,23 @@ func _build_ui() -> void:
 	_add_spin(box, "贴图世界尺寸", 0.2, 2.0, 0.05, texture_world_size, _on_texture_size_changed)
 	_add_spin(box, "表面间隙", 0.0, 0.3, 0.005, clearance, _on_clearance_changed)
 	_add_spin(box, "默认转角分段", 2.0, 32.0, 1.0, default_corner_segments, _on_default_segments_changed)
+	_add_heading(box, "网格优化")
+	var optimization_option := OptionButton.new()
+	optimization_option.add_item("自动：直线减面 / 弯道保精度", 0)
+	optimization_option.add_item("手动：统一步长", 1)
+	optimization_option.selected = 0
+	optimization_option.item_selected.connect(_on_optimization_mode_changed)
+	box.add_child(optimization_option)
+	var texture_link_toggle := CheckBox.new()
+	texture_link_toggle.text = "按贴图世界尺寸联动步长"
+	texture_link_toggle.button_pressed = true
+	texture_link_toggle.toggled.connect(_on_texture_link_changed)
+	box.add_child(texture_link_toggle)
+	_add_spin(box, "直线步长/倍率", 0.1, 12.0, 0.1, 4.0, _on_straight_step_changed)
+	_add_spin(box, "弯道步长/倍率", 0.02, 4.0, 0.01, 0.28, _on_curve_step_changed)
+	_add_spin(box, "直线角度阈值 °", 0.5, 15.0, 0.5, 3.0, _on_straight_angle_changed)
+	_add_spin(box, "手动统一步长 m", 0.02, 1.0, 0.01, 0.18, _on_manual_step_changed)
+	_add_hint(box, "变径与离墙变化段自动使用精细步长，UV 不拉伸")
 	_add_heading(box, "直径分段")
 	_add_hint(box, "终点按路径比例划分；最后一固定为 100%")
 	segments_box = VBoxContainer.new()
@@ -611,6 +636,7 @@ func _reedit_selected_pipe() -> void:
 	texture_world_size = record["texture_world_size"]
 	clearance = record["clearance"]
 	default_corner_segments = record["default_corner_segments"]
+	mesh_optimization = record.get("optimization", mesh_optimization).duplicate()
 	path_collider = control_colliders[0]
 	selected_control = -1
 	history.clear()
@@ -695,6 +721,7 @@ func _sync_current_record() -> void:
 		"texture_world_size": texture_world_size,
 		"clearance": clearance,
 		"default_corner_segments": default_corner_segments,
+		"optimization": mesh_optimization.duplicate(),
 		"finalized": pipe_finalized,
 		"baked": pipe_records.get(current_pipe_id, {}).get("baked", false)
 	}
@@ -1180,7 +1207,7 @@ func _generate_pipe() -> void:
 	if path_points.size() < 2:
 		stats_label.text = "左键编辑路径，右键拖动环绕，滚轮缩放"
 		return
-	var result: Dictionary = PipeBuilder.build(path_points, path_normals, segments, radial_segments, texture_world_size, clearance, path_wall_offsets)
+	var result: Dictionary = PipeBuilder.build(path_points, path_normals, segments, radial_segments, texture_world_size, clearance, path_wall_offsets, mesh_optimization)
 	if result.has("error"):
 		status_label.text = "生成失败：" + result["error"]
 		return
@@ -1382,6 +1409,30 @@ func _on_radial_changed(value: float) -> void:
 
 func _on_texture_size_changed(value: float) -> void:
 	texture_world_size = value
+	_generate_pipe()
+
+func _on_optimization_mode_changed(index: int) -> void:
+	mesh_optimization["auto"] = index == 0
+	_generate_pipe()
+
+func _on_texture_link_changed(enabled: bool) -> void:
+	mesh_optimization["texture_link"] = enabled
+	_generate_pipe()
+
+func _on_straight_step_changed(value: float) -> void:
+	mesh_optimization["straight_step"] = value
+	_generate_pipe()
+
+func _on_curve_step_changed(value: float) -> void:
+	mesh_optimization["curve_step"] = value
+	_generate_pipe()
+
+func _on_straight_angle_changed(value: float) -> void:
+	mesh_optimization["straight_angle"] = value
+	_generate_pipe()
+
+func _on_manual_step_changed(value: float) -> void:
+	mesh_optimization["manual_step"] = value
 	_generate_pipe()
 
 func _on_clearance_changed(value: float) -> void:

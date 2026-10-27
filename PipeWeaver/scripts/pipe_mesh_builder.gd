@@ -1,10 +1,10 @@
 class_name PipeMeshBuilder
 extends RefCounted
 
-static func build(points: Array, surface_normals: Array, segments: Array, radial_segments: int, texture_world_size: float, clearance: float, surface_offsets: Array = []) -> Dictionary:
+static func build(points: Array, surface_normals: Array, segments: Array, radial_segments: int, texture_world_size: float, clearance: float, surface_offsets: Array = [], optimization: Dictionary = {}) -> Dictionary:
 	if points.size() < 2 or points.size() != surface_normals.size():
 		return {"error": "路径至少需要两个带表面法线的点。"}
-	var refined: Dictionary = _refine_path(points, surface_normals, 0.18, surface_offsets)
+	var refined: Dictionary = _refine_path(points, surface_normals, surface_offsets, segments, texture_world_size, optimization)
 	var path: Array = refined["points"]
 	var normals: Array = refined["normals"]
 	var wall_offsets: Array = refined["wall_offsets"]
@@ -69,19 +69,42 @@ static func build(points: Array, surface_normals: Array, segments: Array, radial
 		"centers": centers
 	}
 
-static func _refine_path(points: Array, normals: Array, max_step: float, surface_offsets: Array = []) -> Dictionary:
+static func _refine_path(points: Array, normals: Array, surface_offsets: Array, segments: Array, texture_world_size: float, optimization: Dictionary) -> Dictionary:
 	var out_points: Array[Vector3] = [points[0]]
 	var out_normals: Array[Vector3] = [normals[0]]
 	var out_offsets: Array[float] = [surface_offsets[0] if surface_offsets.size() == points.size() else 0.0]
+	var automatic: bool = optimization.get("auto", true)
+	var texture_link: bool = optimization.get("texture_link", true)
+	var straight_step: float = optimization.get("straight_step", 4.0)
+	var curve_step: float = optimization.get("curve_step", 0.28)
+	if texture_link:
+		straight_step *= texture_world_size
+		curve_step *= texture_world_size
+	var threshold: float = deg_to_rad(optimization.get("straight_angle", 3.0))
+	var total_length: float = _distances(points)[-1]
+	var travelled: float = 0.0
 	for i in range(points.size() - 1):
 		var a: Vector3 = points[i]
 		var b: Vector3 = points[i + 1]
-		var steps: int = maxi(1, ceili(a.distance_to(b) / max_step))
+		var length: float = a.distance_to(b)
+		var step_size: float = optimization.get("manual_step", 0.18)
+		if automatic:
+			var direction: Vector3 = (b - a).normalized()
+			var before: Vector3 = direction if i == 0 else (a - points[i - 1]).normalized()
+			var after: Vector3 = direction if i == points.size() - 2 else (points[i + 2] - b).normalized()
+			var turn: float = maxf(before.angle_to(direction), direction.angle_to(after))
+			var normal_turn: float = normals[i].angle_to(normals[i + 1])
+			var diameter_change: bool = absf(_diameter_at(travelled, total_length, segments) - _diameter_at(travelled + length, total_length, segments)) > 0.001
+			var offset_change: bool = surface_offsets.size() == points.size() and absf(surface_offsets[i] - surface_offsets[i + 1]) > 0.001
+			var straight: bool = turn <= threshold and normal_turn <= threshold and not diameter_change and not offset_change
+			step_size = straight_step if straight else curve_step
+		var steps: int = maxi(1, ceili(length / maxf(step_size, 0.01)))
 		for step in range(1, steps + 1):
 			var t: float = float(step) / float(steps)
 			out_points.append(a.lerp(b, t))
 			out_normals.append(normals[i].lerp(normals[i + 1], t).normalized())
 			out_offsets.append(lerpf(surface_offsets[i], surface_offsets[i + 1], t) if surface_offsets.size() == points.size() else 0.0)
+		travelled += length
 	return {"points": out_points, "normals": out_normals, "wall_offsets": out_offsets}
 
 static func _distances(points: Array) -> Array[float]:
