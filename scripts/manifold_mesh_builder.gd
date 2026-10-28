@@ -1,33 +1,77 @@
 class_name PCGManifoldMeshBuilder
 extends RefCounted
 
-static func ring(outer_radius: float, inner_radius: float, depth: float, segments: int = 48) -> ArrayMesh:
+static func ring(outer_radius: float, inner_radius: float, depth: float, segments: int = 48, texture_world_size: float = 1.0) -> ArrayMesh:
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
 	var indices := PackedInt32Array()
 	var half_depth := depth * 0.5
+	var world_size := maxf(texture_world_size, 0.001)
 	for i in segments:
 		var angle := TAU * float(i) / float(segments)
+		var next_angle := TAU * float(i + 1) / float(segments)
 		var radial := Vector3(cos(angle), sin(angle), 0.0)
-		vertices.append(radial * outer_radius + Vector3(0.0, 0.0, -half_depth))
-		vertices.append(radial * outer_radius + Vector3(0.0, 0.0, half_depth))
-		vertices.append(radial * inner_radius + Vector3(0.0, 0.0, -half_depth))
-		vertices.append(radial * inner_radius + Vector3(0.0, 0.0, half_depth))
-		for j in 4:
-			normals.append(radial if j < 2 else -radial)
-	for i in segments:
-		var next := (i + 1) % segments
-		var a := i * 4
-		var b := next * 4
-		indices.append_array(PackedInt32Array([a, a + 1, b + 1, a, b + 1, b]))
-		indices.append_array(PackedInt32Array([a + 2, b + 3, a + 3, a + 2, b + 2, b + 3]))
-		indices.append_array(PackedInt32Array([a + 1, a + 3, b + 1, b + 1, a + 3, b + 3]))
-		indices.append_array(PackedInt32Array([a, b + 2, a + 2, a, b, b + 2]))
+		var next_radial := Vector3(cos(next_angle), sin(next_angle), 0.0)
+		var outer_a := radial * outer_radius
+		var outer_b := next_radial * outer_radius
+		var inner_a := radial * inner_radius
+		var inner_b := next_radial * inner_radius
+		var back := Vector3(0.0, 0.0, -half_depth)
+		var front := Vector3(0.0, 0.0, half_depth)
+		_add_quad(
+			vertices, normals, uvs, indices,
+			PackedVector3Array([outer_a + back, outer_a + front, outer_b + front, outer_b + back]),
+			PackedVector3Array([radial, radial, next_radial, next_radial]),
+			PackedVector2Array([
+				Vector2(angle * outer_radius / world_size, -half_depth / world_size),
+				Vector2(angle * outer_radius / world_size, half_depth / world_size),
+				Vector2(next_angle * outer_radius / world_size, half_depth / world_size),
+				Vector2(next_angle * outer_radius / world_size, -half_depth / world_size),
+			])
+		)
+		_add_quad(
+			vertices, normals, uvs, indices,
+			PackedVector3Array([inner_a + back, inner_b + back, inner_b + front, inner_a + front]),
+			PackedVector3Array([-radial, -next_radial, -next_radial, -radial]),
+			PackedVector2Array([
+				Vector2(angle * inner_radius / world_size, -half_depth / world_size),
+				Vector2(next_angle * inner_radius / world_size, -half_depth / world_size),
+				Vector2(next_angle * inner_radius / world_size, half_depth / world_size),
+				Vector2(angle * inner_radius / world_size, half_depth / world_size),
+			])
+		)
+		_add_quad(
+			vertices, normals, uvs, indices,
+			PackedVector3Array([outer_a + front, inner_a + front, inner_b + front, outer_b + front]),
+			PackedVector3Array([Vector3.BACK, Vector3.BACK, Vector3.BACK, Vector3.BACK]),
+			_planar_uvs(PackedVector3Array([outer_a, inner_a, inner_b, outer_b]), world_size)
+		)
+		_add_quad(
+			vertices, normals, uvs, indices,
+			PackedVector3Array([outer_a + back, outer_b + back, inner_b + back, inner_a + back]),
+			PackedVector3Array([Vector3.FORWARD, Vector3.FORWARD, Vector3.FORWARD, Vector3.FORWARD]),
+			_planar_uvs(PackedVector3Array([outer_a, outer_b, inner_b, inner_a]), world_size)
+		)
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
+
+static func _planar_uvs(points: PackedVector3Array, world_size: float) -> PackedVector2Array:
+	var result := PackedVector2Array()
+	for point in points:
+		result.append(Vector2(point.x, point.y) / world_size)
+	return result
+
+static func _add_quad(vertices: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, indices: PackedInt32Array, points: PackedVector3Array, face_normals: PackedVector3Array, face_uvs: PackedVector2Array) -> void:
+	var base := vertices.size()
+	vertices.append_array(points)
+	normals.append_array(face_normals)
+	uvs.append_array(face_uvs)
+	indices.append_array(PackedInt32Array([base, base + 1, base + 2, base, base + 2, base + 3]))

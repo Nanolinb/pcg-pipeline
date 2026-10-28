@@ -21,10 +21,14 @@ var thickness: float:
 		return wall_size.z if surface_kind == SurfaceKind.PLANE else cylinder_depth
 var combiner: CSGCombiner3D
 var body: CSGShape3D
+var body_material: StandardMaterial3D
 var base_shapes: Array[CSGShape3D] = []
 var outline: MeshInstance3D
 var outline_parts: Array[MeshInstance3D] = []
+var render_root: Node3D
 var render_mesh: MeshInstance3D
+var render_meshes: Array[MeshInstance3D] = []
+var render_transform := Transform3D.IDENTITY
 var solid_mesh: ArrayMesh
 var wireframe_material: ShaderMaterial
 var wireframe_enabled: bool = false
@@ -36,9 +40,8 @@ func _ready() -> void:
 	combiner = CSGCombiner3D.new()
 	combiner.name = "WatertightFusion"
 	add_child(combiner)
-	var material := StandardMaterial3D.new()
-	material.albedo_color = body_color
-	material.roughness = 0.78
+	body_material = MaterialLibrary.solid(StringName("host_surface_%d" % surface_kind), body_color, 0.78, 0.0, &"host_surface", 1.0)
+	var material := body_material
 	if surface_kind != SurfaceKind.PLANE:
 		var cylinder := CSGCylinder3D.new()
 		cylinder.radius = cylinder_radius
@@ -70,11 +73,10 @@ func _add_base_shape(shape: CSGShape3D, material: Material) -> void:
 
 func _build_render_mesh() -> void:
 	combiner.visible = false
-	render_mesh = MeshInstance3D.new()
-	render_mesh.name = "SmoothedFusionRender"
-	add_child(render_mesh)
-	wireframe_material = ShaderMaterial.new()
-	wireframe_material.shader = preload("res://shaders/wireframe.gdshader")
+	render_root = Node3D.new()
+	render_root.name = "SmoothedFusionChunks"
+	add_child(render_root)
+	wireframe_material = MaterialLibrary.shader(&"editor/watertight_wireframe", preload("res://shaders/wireframe.gdshader"))
 	mark_geometry_dirty()
 
 func mark_geometry_dirty() -> void:
@@ -92,16 +94,46 @@ func _refresh_render_mesh() -> void:
 	if meshes.size() < 2 or not meshes[1] is Mesh:
 		render_dirty = true
 		return
-	render_mesh.transform = meshes[0]
-	solid_mesh = SmoothMeshBuilder.rebuild(meshes[1])
-	render_mesh.mesh = SmoothMeshBuilder.build_wireframe(solid_mesh) if wireframe_enabled else solid_mesh
+	render_transform = meshes[0]
+	solid_mesh = SmoothMeshBuilder.rebuild(meshes[1], 50.0, {
+		"surface_kind": surface_kind,
+		"cylinder_radius": cylinder_radius,
+		"cylinder_height": cylinder_height,
+		"fallback_material": body_material,
+	})
+	_rebuild_render_chunks()
 
 func set_wireframe(enabled: bool) -> void:
 	wireframe_enabled = enabled
 	if render_mesh != null:
-		render_mesh.material_override = wireframe_material if enabled else null
+		for instance in render_meshes:
+			instance.material_override = wireframe_material if enabled else null
 		if solid_mesh != null:
-			render_mesh.mesh = SmoothMeshBuilder.build_wireframe(solid_mesh) if enabled else solid_mesh
+			_rebuild_render_chunks()
+
+func _rebuild_render_chunks() -> void:
+	if render_root == null:
+		return
+	for child in render_root.get_children():
+		render_root.remove_child(child)
+		child.queue_free()
+	render_meshes.clear()
+	render_mesh = null
+	if solid_mesh == null:
+		return
+	var source := SmoothMeshBuilder.build_wireframe(solid_mesh) if wireframe_enabled else solid_mesh
+	var baker := PCGMeshChunkBaker.new(8.0)
+	baker.append(source, render_transform, wireframe_material if wireframe_enabled else null)
+	for chunk in baker.build():
+		var instance := MeshInstance3D.new()
+		var coord: Vector3i = chunk["coord"]
+		instance.name = "RenderChunk_%d_%d_%d" % [coord.x, coord.y, coord.z]
+		instance.mesh = chunk["mesh"]
+		instance.material_override = wireframe_material if wireframe_enabled else null
+		render_root.add_child(instance)
+		render_meshes.append(instance)
+		if render_mesh == null:
+			render_mesh = instance
 
 func _build_outline() -> void:
 	if surface_kind != SurfaceKind.PLANE:
@@ -128,9 +160,7 @@ func _create_outline_part(mesh: Mesh, local_position: Vector3) -> MeshInstance3D
 	part.name = "AttachmentOutline"
 	part.mesh = mesh
 	part.position = local_position
-	var material := ShaderMaterial.new()
-	material.shader = preload("res://shaders/attachment_outline.gdshader")
-	part.material_override = material
+	part.material_override = MaterialLibrary.shader(&"editor/attachment_outline", preload("res://shaders/attachment_outline.gdshader"))
 	part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	part.visible = false
 	outline_parts.append(part)

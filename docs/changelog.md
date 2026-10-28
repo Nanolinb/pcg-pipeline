@@ -1,5 +1,19 @@
 # 修改记录
 
+## 2026-10-28 · 用户可填充的 Material Profile 与贴图槽
+
+### 正式材质接口
+- 两个工程新增 Material Profile：BaseColor、Detail、Normal、ORM 四个 Texture2D 槽均可留空，并提供 Tint、粗糙度、金属度及 Detail/Normal 参数。
+- 新增通用贴图槽面板，显示默认/已自定义状态，支持文件浏览填入与一键清除回退。
+- 组件框架和玻璃使用默认 Profile 资产；选中组件后可在右侧直接编辑，变更仅刷新共享材质，不重建网格或改变吸附状态。
+- 管道空槽回退到程序化 PBR 贴图，自定义槽同步普通与 AO 变体，每管 AO 和 UV2 继续保持独立。
+
+### 验证
+- 根工程完整 smoke 通过，新增内存贴图填入、共享 uniform、材质/网格实例保持和清除回退断言。
+- 两个工程 headless 解析与实际生成通过。
+- 单一 PipeWeaver 图形实例完成真实文件浏览填入，管体立即显示自定义颜色；清除后恢复默认外观。
+- AO、固定 Mesh 和重编辑回归通过，日志保持 `PIPE_BAKED id=1 chunks=4 materials=13`。
+
 ## 2026-10-28 · PCG 共享材质、世界尺度 UV 与 Chunk 合批
 
 ### Surface Component PCG v0.6.0
@@ -171,3 +185,27 @@
 - Godot 导入与初始 PBR 渲染通过。
 - 单窗口执行当前管道 AO 烘焙，状态确认接头遮蔽增强、UV2 独立。
 - 提交：`feat(pipeweaver): add tiled PBR materials and per-pipe AO baking`
+
+## 2026-10-28 · Surface Component PCG v0.8.0
+
+### 组件基线纳入
+- 同步提交此前工作区中的共享 Material Profile、材质槽、世界尺度 UV 和 8m Chunk 合批改造。
+- 保留全部材质、Chunk 和手柄回归断言，不以过渡功能回退上述管线。
+
+### 主体包裹过渡
+- 根部嵌入统一为资产参数 `root_embed`，默认加深至 0.12m，预览与实体一致。
+- 每个组件可独立开关主体包裹过渡，关闭时真实移除对应 CSG union。
+- 厚度默认根据组件 footprint、缩放和主体曲率/矢高自适应，支持选中后显式调整。
+- 弧度独立控制截面插值曲线；移动、法线倾角和缩放变化后外圈继续贴合主体。
+- 圆窗使用径向截面，方窗使用矩形截面；过渡包含 loft、侧壁与底部封闭结构。
+- 过渡继承主体共享材质并进入 smooth groups、Chunk 合批和 UV2 水密线框。
+
+### 制作手册
+- 新增 `docs/component_authoring.md`，记录坐标、根部嵌入、封闭 Mesh、过渡、UV、共享材质和验收规范。
+
+### 验证
+- headless 与真实图形视口 smoke 通过，包含过渡封闭边、开关恢复、自适应/显式厚度及既有功能回归。
+- 实际界面完成过渡开关对比，确认自适应厚度、弧度控件和最终三角线框。
+
+### 提交
+- `feat(components): add shared materials and host transitions`

@@ -2,11 +2,16 @@ class_name PCGSurfaceComponent
 extends Node3D
 
 const ManifoldBuilder = preload("res://scripts/manifold_mesh_builder.gd")
+const TransitionBuilder = preload("res://scripts/transition_mesh_builder.gd")
 
 var definition: PCGComponentDefinition
 var wall: Node3D
 var anchor := Vector2.ZERO
 var attachment_angle_degrees: float = 0.0
+var transition_enabled: bool = true
+var transition_thickness: float = -1.0
+var transition_curvature: float = 0.65
+var transition_shape: CSGMesh3D
 var user_scale: float = 1.0
 var neighborhood_scale: float = 1.0
 var current_scale: float = 1.0
@@ -21,11 +26,15 @@ func configure(component_definition: PCGComponentDefinition, host_wall: Node3D) 
 	definition = component_definition
 	wall = host_wall
 	attachment_angle_degrees = definition.attachment_angle_degrees
+	transition_enabled = definition.transition_enabled
+	transition_thickness = definition.transition_thickness
+	transition_curvature = definition.transition_curvature
 	name = "Component_%s" % definition.id
 	_build_pick_area()
 	_build_selection()
 	_build_gizmos()
 	_build_csg()
+	_rebuild_transition_shape()
 	update_transform()
 
 func _build_pick_area() -> void:
@@ -68,11 +77,7 @@ func _build_selection() -> void:
 			immediate.surface_add_vertex(corners[(i + 1) % 4])
 	immediate.surface_end()
 	selection_lines.mesh = immediate
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color("ffe06a")
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.no_depth_test = true
-	selection_lines.material_override = material
+	selection_lines.material_override = MaterialLibrary.unshaded(&"editor/component_selection", Color("ffe06a"))
 	selection_lines.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	selection_lines.visible = false
 	add_child(selection_lines)
@@ -140,16 +145,12 @@ func _create_handle(kind: String, local_position: Vector3, color: Color, cube: b
 	gizmo_root.add_child(instance)
 
 func _gizmo_material(color: Color) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.no_depth_test = true
-	return material
+	return MaterialLibrary.unshaded(StringName("editor/gizmo_%s" % color.to_html()), color)
 
 func _build_csg() -> void:
 	var opening := definition.opening_size()
-	var frame_depth := definition.depth + 0.08
-	var frame_z := (definition.depth - 0.08) * 0.5
+	var frame_depth := definition.depth + definition.root_embed
+	var frame_z := (definition.depth - definition.root_embed) * 0.5
 	if definition.shape == PCGComponentDefinition.Shape.ROUND_WINDOW:
 		var round_cutter := CSGCylinder3D.new()
 		round_cutter.name = "OpeningCutter"
@@ -163,9 +164,9 @@ func _build_csg() -> void:
 		frame.name = "RoundFrame"
 		frame.operation = CSGShape3D.OPERATION_UNION
 		frame.mesh = definition.custom_frame_mesh if definition.custom_frame_mesh != null else ManifoldBuilder.ring(
-			definition.size.x * 0.5, opening.x * 0.5, frame_depth
+			definition.size.x * 0.5, opening.x * 0.5, frame_depth, 48, definition.texture_world_size
 		)
-		frame.material = _solid_material(definition.frame_color, 0.32)
+		frame.material = _solid_material(definition.frame_material_id, definition.frame_profile, definition.frame_color, 0.32, 0.0, definition.texture_world_size)
 		visuals.append(frame)
 		_register_shape(frame, Vector3(0.0, 0.0, frame_z))
 		var glass := CSGCylinder3D.new()
@@ -174,7 +175,7 @@ func _build_csg() -> void:
 		glass.radius = opening.x * 0.5 + 0.025
 		glass.height = 0.1
 		glass.sides = 48
-		glass.material = _solid_material(definition.glass_color, 0.16, 0.25)
+		glass.material = _solid_material(definition.glass_material_id, definition.glass_profile, definition.glass_color, 0.16, 0.25, definition.texture_world_size)
 		visuals.append(glass)
 		_register_shape(glass, Vector3(0.0, 0.0, 0.015), Vector3(PI * 0.5, 0.0, 0.0))
 	else:
@@ -195,19 +196,54 @@ func _build_csg() -> void:
 			frame_box.name = "SquareFrame"
 			frame_box.operation = CSGShape3D.OPERATION_UNION
 			frame_box.size = part[0]
-			frame_box.material = _solid_material(definition.frame_color, 0.38)
+			frame_box.material = _solid_material(definition.frame_material_id, definition.frame_profile, definition.frame_color, 0.38, 0.0, definition.texture_world_size)
 			visuals.append(frame_box)
 			_register_shape(frame_box, part[1])
 		var square_glass := CSGBox3D.new()
 		square_glass.name = "SquareGlass"
 		square_glass.operation = CSGShape3D.OPERATION_UNION
 		square_glass.size = Vector3(opening.x + 0.05, opening.y + 0.05, 0.1)
-		square_glass.material = _solid_material(definition.glass_color, 0.16, 0.25)
+		square_glass.material = _solid_material(definition.glass_material_id, definition.glass_profile, definition.glass_color, 0.16, 0.25, definition.texture_world_size)
 		visuals.append(square_glass)
 		_register_shape(square_glass, Vector3(0.0, 0.0, 0.015))
 
 func _register_shape(shape: CSGShape3D, local_position: Vector3, local_rotation: Vector3 = Vector3.ZERO) -> void:
 	shape.set_meta("component_local", Transform3D(Basis.from_euler(local_rotation), local_position))
+
+func effective_transition_thickness() -> float:
+	if transition_thickness >= 0.0:
+		return transition_thickness
+	if wall.surface_kind == PCGFusedWall.SurfaceKind.PLANE:
+		return 0.08
+	var radius: float = wall.cylinder_radius
+	var footprint := definition.footprint_radius() * maxf(current_scale, 0.1)
+	var sagitta := radius - sqrt(maxf(radius * radius - footprint * footprint, 0.0))
+	return clampf(0.08 + sagitta * 0.9, 0.08, 0.5)
+
+func set_transition_enabled(value: bool) -> void:
+	if transition_enabled == value:
+		return
+	transition_enabled = value
+	_rebuild_transition_shape()
+
+func _rebuild_transition_shape() -> void:
+	if transition_shape != null:
+		visuals.erase(transition_shape)
+		if transition_shape.get_parent() != null:
+			transition_shape.get_parent().remove_child(transition_shape)
+		transition_shape.queue_free()
+		transition_shape = null
+	if transition_enabled:
+		transition_shape = CSGMesh3D.new()
+		transition_shape.name = "HostTransition"
+		transition_shape.operation = CSGShape3D.OPERATION_UNION
+		transition_shape.material = wall.body_material
+		visuals.append(transition_shape)
+		_register_shape(transition_shape, Vector3.ZERO)
+		if active:
+			wall.combiner.add_child(transition_shape)
+	wall._reorder()
+	update_transform()
 
 func apply_scale(value: float) -> void:
 	neighborhood_scale = clampf(value, 0.0, 1.0)
@@ -244,19 +280,21 @@ func update_transform() -> void:
 	for shape in visuals + [cutter]:
 		if shape.get_parent() != null:
 			shape.global_transform = global_transform * shape.get_meta("component_local") as Transform3D
+	if transition_shape != null:
+		transition_shape.mesh = TransitionBuilder.build(self)
 	wall.mark_geometry_dirty()
 
 static func make_preview(component_definition: PCGComponentDefinition) -> Node3D:
 	var root := Node3D.new()
 	root.name = "AttachmentPreview"
-	var frame_material := _preview_material(component_definition.frame_color)
-	var glass_material := _preview_material(component_definition.glass_color)
+	var frame_material := _preview_material(StringName("preview_%s_frame" % component_definition.id), component_definition.frame_color)
+	var glass_material := _preview_material(StringName("preview_%s_glass" % component_definition.id), component_definition.glass_color)
 	var opening := component_definition.opening_size()
-	var frame_depth := component_definition.depth + 0.08
-	var frame_z := (component_definition.depth - 0.08) * 0.5
+	var frame_depth := component_definition.depth + component_definition.root_embed
+	var frame_z := (component_definition.depth - component_definition.root_embed) * 0.5
 	if component_definition.shape == PCGComponentDefinition.Shape.ROUND_WINDOW:
 		_add_preview_mesh(root, component_definition.custom_frame_mesh if component_definition.custom_frame_mesh != null else ManifoldBuilder.ring(
-			component_definition.size.x * 0.5, opening.x * 0.5, frame_depth
+			component_definition.size.x * 0.5, opening.x * 0.5, frame_depth, 48, component_definition.texture_world_size
 		), frame_material, Vector3(0.0, 0.0, frame_z))
 		var glass := CylinderMesh.new()
 		glass.top_radius = opening.x * 0.5
@@ -289,17 +327,10 @@ static func _add_preview_mesh(parent: Node3D, mesh: Mesh, material: Material, lo
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(instance)
 
-static func _solid_material(color: Color, roughness: float, metallic: float = 0.0) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = roughness
-	material.metallic = metallic
-	return material
+static func _solid_material(id: StringName, profile: PCGMaterialProfile, color: Color, roughness: float, metallic: float = 0.0, texture_world_size: float = 1.0) -> Material:
+	if profile != null:
+		return MaterialLibrary.profile_shader(id, preload("res://shaders/architectural_pbr.gdshader"), profile, {}, {}, &"preserve", texture_world_size)
+	return MaterialLibrary.solid(id, color, roughness, metallic, &"preserve", texture_world_size)
 
-static func _preview_material(color: Color) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(color, 0.42)
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	return material
+static func _preview_material(id: StringName, color: Color) -> StandardMaterial3D:
+	return MaterialLibrary.unshaded(id, Color(color, 0.42), false, true, false, BaseMaterial3D.CULL_DISABLED)

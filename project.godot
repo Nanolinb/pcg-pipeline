@@ -1,8 +1,12 @@
 [application]
 config/name="Surface Component PCG"
-config/version="0.5.0"
+config/version="0.8.0"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
+
+[autoload]
+
+MaterialLibrary="*res://scripts/material_library.gd"
 
 [display]
 window/size/viewport_width=1440

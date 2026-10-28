@@ -40,7 +40,12 @@ var selected_threshold_label: Label
 var selected_anchor_label: Label
 var selected_state_label: Label
 var attachment_angle_spin: SpinBox
+var transition_toggle: CheckButton
+var transition_thickness_spin: SpinBox
+var transition_curvature_spin: SpinBox
 var wireframe_button: Button
+var frame_slot_panel: PCGTextureSlotPanel
+var glass_slot_panel: PCGTextureSlotPanel
 
 func _ready() -> void:
 	_build_environment()
@@ -95,10 +100,7 @@ func _build_environment() -> void:
 	ground_mesh.size = Vector3(16.0, 0.25, 12.0)
 	ground.mesh = ground_mesh
 	ground.position = Vector3(0.0, -0.15, 0.0)
-	var ground_material := StandardMaterial3D.new()
-	ground_material.albedo_color = Color("293b43")
-	ground_material.roughness = 0.92
-	ground.material_override = ground_material
+	ground.material_override = MaterialLibrary.solid(&"environment/ground", Color("293b43"), 0.92)
 	add_child(ground)
 
 func _build_camera() -> void:
@@ -191,9 +193,12 @@ func _build_ui() -> void:
 	inspector_margin.add_theme_constant_override("margin_left", 10)
 	inspector_margin.add_theme_constant_override("margin_right", 10)
 	inspector_panel.add_child(inspector_margin)
+	var inspector_scroll := ScrollContainer.new()
+	inspector_margin.add_child(inspector_scroll)
 	var inspector := VBoxContainer.new()
+	inspector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	inspector.add_theme_constant_override("separation", 10)
-	inspector_margin.add_child(inspector)
+	inspector_scroll.add_child(inspector)
 	_add_heading(inspector, "选中组件")
 	selected_name_label = _inspector_value(inspector, "未选择")
 	var angle_row := HBoxContainer.new()
@@ -214,6 +219,44 @@ func _build_ui() -> void:
 	selected_threshold_label = _inspector_value(inspector, "")
 	selected_anchor_label = _inspector_value(inspector, "")
 	selected_state_label = _inspector_value(inspector, "")
+	transition_toggle = CheckButton.new()
+	transition_toggle.text = "主体包裹过渡"
+	transition_toggle.disabled = true
+	transition_toggle.toggled.connect(_on_transition_toggled)
+	inspector.add_child(transition_toggle)
+	var thickness_row := HBoxContainer.new()
+	inspector.add_child(thickness_row)
+	var thickness_label := Label.new()
+	thickness_label.text = "过渡厚度"
+	thickness_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	thickness_row.add_child(thickness_label)
+	transition_thickness_spin = SpinBox.new()
+	transition_thickness_spin.min_value = 0.02
+	transition_thickness_spin.max_value = 1.0
+	transition_thickness_spin.step = 0.01
+	transition_thickness_spin.suffix = "m"
+	transition_thickness_spin.editable = false
+	transition_thickness_spin.value_changed.connect(_on_transition_thickness_changed)
+	thickness_row.add_child(transition_thickness_spin)
+	var curvature_row := HBoxContainer.new()
+	inspector.add_child(curvature_row)
+	var curvature_label := Label.new()
+	curvature_label.text = "过渡弧度"
+	curvature_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	curvature_row.add_child(curvature_label)
+	transition_curvature_spin = SpinBox.new()
+	transition_curvature_spin.min_value = 0.0
+	transition_curvature_spin.max_value = 1.0
+	transition_curvature_spin.step = 0.05
+	transition_curvature_spin.editable = false
+	transition_curvature_spin.value_changed.connect(_on_transition_curvature_changed)
+	curvature_row.add_child(transition_curvature_spin)
+	_add_hint(inspector, "外圈贴合主体，内圈接入窗根。\n厚度默认按主体曲率自适应。")
+	_add_heading(inspector, "共享材质 · 框架")
+	frame_slot_panel = _create_slot_panel(inspector, _on_frame_texture_changed)
+	_add_heading(inspector, "共享材质 · 玻璃")
+	glass_slot_panel = _create_slot_panel(inspector, _on_glass_texture_changed)
+	_add_hint(inspector, "空槽使用默认外观。修改 Profile 会作用于所有引用该材质的组件。")
 	_add_hint(inspector, "拖动已放置组件时仍保持吸附。\n橙色球：上下拖动调整法线倾角。\n绿色方块：左右拖动等比缩放。\n0° 表示完全遵循主体表面法线。")
 	_add_heading(inspector, "融合方式")
 	_add_hint(inspector, "主体与组件采用封闭实体 CSG。\n先执行全部开洞差集，再执行窗框\n与玻璃并集。组件消失时移除开洞，\n主体墙面会真实恢复。")
@@ -226,6 +269,14 @@ func _build_ui() -> void:
 	_add_hint(inspector, "线框模式显示实际三角网格，\n用于检查开洞与融合边界。")
 	_add_heading(inspector, "快捷键")
 	_add_hint(inspector, "Delete  删除选中组件\nEsc  取消拖放 / 选择\nF  重置视角\nG  切换水密线框")
+
+func _create_slot_panel(parent: VBoxContainer, callback: Callable) -> PCGTextureSlotPanel:
+	var panel := PCGTextureSlotPanel.new()
+	panel.visible = false
+	panel.texture_changed.connect(callback)
+	panel.load_failed.connect(func(message: String): status_label.text = message)
+	parent.add_child(panel)
+	return panel
 
 func _add_heading(parent: VBoxContainer, text: String) -> void:
 	var separator := HSeparator.new()
@@ -506,6 +557,11 @@ func _update_inspector() -> void:
 		selected_state_label.text = ""
 		attachment_angle_spin.editable = false
 		attachment_angle_spin.set_value_no_signal(0.0)
+		transition_toggle.disabled = true
+		transition_thickness_spin.editable = false
+		transition_curvature_spin.editable = false
+		frame_slot_panel.visible = false
+		glass_slot_panel.visible = false
 		return
 	selected_name_label.text = "%s · %s" % [selected.definition.display_name, selected.wall.display_name]
 	selected_scale_label.text = "当前尺寸：%d%%" % roundi(selected.current_scale * 100.0)
@@ -515,6 +571,32 @@ func _update_inspector() -> void:
 	selected_state_label.add_theme_color_override("font_color", Color("83e0b5") if selected.active else Color("ff9d79"))
 	attachment_angle_spin.editable = true
 	attachment_angle_spin.set_value_no_signal(selected.attachment_angle_degrees)
+	transition_toggle.disabled = false
+	transition_toggle.set_pressed_no_signal(selected.transition_enabled)
+	transition_thickness_spin.editable = selected.transition_enabled
+	transition_thickness_spin.set_value_no_signal(selected.effective_transition_thickness())
+	transition_curvature_spin.editable = selected.transition_enabled
+	transition_curvature_spin.set_value_no_signal(selected.transition_curvature)
+	frame_slot_panel.visible = true
+	glass_slot_panel.visible = true
+	frame_slot_panel.set_profile(selected.definition.frame_profile)
+	glass_slot_panel.set_profile(selected.definition.glass_profile)
+
+func _on_frame_texture_changed(_slot: StringName, _texture: Texture2D) -> void:
+	_refresh_selected_materials()
+
+func _on_glass_texture_changed(_slot: StringName, _texture: Texture2D) -> void:
+	_refresh_selected_materials()
+
+func _refresh_selected_materials() -> void:
+	if selected == null:
+		return
+	var definition := selected.definition
+	if definition.frame_profile != null:
+		MaterialLibrary.profile_shader(definition.frame_material_id, preload("res://shaders/architectural_pbr.gdshader"), definition.frame_profile, {}, {}, &"preserve", definition.texture_world_size)
+	if definition.glass_profile != null:
+		MaterialLibrary.profile_shader(definition.glass_material_id, preload("res://shaders/architectural_pbr.gdshader"), definition.glass_profile, {}, {}, &"preserve", definition.texture_world_size)
+	status_label.text = "共享材质已更新；现有组件和后续生成都会使用该 Profile。"
 
 func _on_attachment_angle_changed(value: float) -> void:
 	if selected == null:
@@ -522,6 +604,27 @@ func _on_attachment_angle_changed(value: float) -> void:
 	selected.attachment_angle_degrees = value
 	selected.update_transform()
 	status_label.text = "法线倾角已设为 %.0f°；0° 表示完全遵循主体表面法线。" % value
+
+func _on_transition_toggled(value: bool) -> void:
+	if selected == null:
+		return
+	selected.set_transition_enabled(value)
+	_update_inspector()
+	status_label.text = "主体包裹过渡已%s。" % ("开启" if value else "关闭")
+
+func _on_transition_thickness_changed(value: float) -> void:
+	if selected == null:
+		return
+	selected.transition_thickness = value
+	selected.update_transform()
+	status_label.text = "过渡厚度已设为 %.2f m。" % value
+
+func _on_transition_curvature_changed(value: float) -> void:
+	if selected == null:
+		return
+	selected.transition_curvature = value
+	selected.update_transform()
+	status_label.text = "过渡弧度已更新。"
 
 func _delete_selected() -> void:
 	if selected == null:
@@ -664,6 +767,22 @@ func _run_smoke_test() -> void:
 	_finish_library_drag()
 	var cylinder_round: PCGSurfaceComponent = components[-1]
 	_smoke_check(cylinder_round.wall == cylinder_host and cylinder_host.combiner.get_meshes().size() == 2, "圆柱应生成实际 CSG 融合网格", failures)
+	_smoke_check(cylinder_round.visuals[0].material == round_window.visuals[0].material, "相同材质 ID 的组件必须复用材质实例", failures)
+	var ring_arrays: Array = round_window.visuals[0].mesh.surface_get_arrays(0)
+	var ring_uvs: PackedVector2Array = ring_arrays[Mesh.ARRAY_TEX_UV] if ring_arrays[Mesh.ARRAY_TEX_UV] != null else PackedVector2Array()
+	_smoke_check(ring_uvs.size() == ring_arrays[Mesh.ARRAY_VERTEX].size(), "程序圆环应包含完整世界尺度 UV", failures)
+	_select_component(cylinder_round)
+	var shared_frame := cylinder_round.visuals[0].material as ShaderMaterial
+	var original_frame_mesh: Mesh = cylinder_round.visuals[0].mesh
+	var test_image := Image.create(2, 2, false, Image.FORMAT_RGB8)
+	test_image.fill(Color("80c060"))
+	var test_texture := ImageTexture.create_from_image(test_image)
+	frame_slot_panel.profile.set_texture_for_slot(&"base_color", test_texture)
+	frame_slot_panel.texture_changed.emit(&"base_color", test_texture)
+	_smoke_check(shared_frame.get_shader_parameter("base_texture") == test_texture and shared_frame.get_shader_parameter("use_base_texture"), "填入 BaseColor 应刷新共享材质 uniform", failures)
+	_smoke_check(cylinder_round.visuals[0].material == shared_frame and cylinder_round.visuals[0].mesh == original_frame_mesh, "贴图变更不得替换材质实例或重建组件网格", failures)
+	frame_slot_panel._clear_slot(&"base_color")
+	_smoke_check(not shared_frame.get_shader_parameter("use_base_texture") and cylinder_round.visuals[0].material == shared_frame, "清除贴图应恢复默认回退并保持共享实例", failures)
 	_move_component(cylinder_round, square_window.anchor)
 	_smoke_check(is_equal_approx(square_window.current_scale, 1.0) and is_equal_approx(cylinder_round.current_scale, 1.0), "不同主体的组件不应互相缩放", failures)
 	var curved_anchor := Vector2(1.0, 0.4)
@@ -710,25 +829,46 @@ func _run_smoke_test() -> void:
 	_move_component(cylinder_round, dome_anchor)
 	_smoke_check(cylinder_round.global_basis.z.normalized().dot(dome_transform.basis.z.normalized()) > 0.999, "组件在半球上应遵循球面法线", failures)
 	_smoke_check(cylinder_host.base_shapes.size() == 2 and cylinder_host.outline_parts.size() == 2, "组合主体应包含圆柱、半球实体与轮廓", failures)
+	_smoke_check(cylinder_round.transition_shape != null and cylinder_round.effective_transition_thickness() > 0.0, "曲面组件应生成自适应包裹过渡", failures)
+	_smoke_check(_mesh_is_closed(cylinder_round.transition_shape.mesh), "包裹过渡应为封闭水密 Mesh", failures)
+	cylinder_round.set_transition_enabled(false)
+	_smoke_check(cylinder_round.transition_shape == null, "关闭过渡应移除对应 CSG", failures)
+	cylinder_round.set_transition_enabled(true)
+	_smoke_check(cylinder_round.transition_shape != null and cylinder_round.transition_shape.get_parent() == cylinder_host.combiner, "重新开启应恢复过渡 CSG", failures)
+	cylinder_round.transition_thickness = 0.25
+	cylinder_round.transition_curvature = 0.8
+	cylinder_round.update_transform()
+	_smoke_check(is_equal_approx(cylinder_round.effective_transition_thickness(), 0.25), "显式厚度应覆盖自适应默认值", failures)
+	cylinder_round.transition_thickness = -1.0
+	cylinder_round.transition_curvature = 0.65
+	cylinder_round.update_transform()
 	await get_tree().process_frame
 	await get_tree().process_frame
 	for host in hosts:
-		_smoke_check(host.render_mesh.mesh != null, "最终平滑渲染网格应已生成", failures)
-		if host.render_mesh.mesh != null:
-			var normals_valid := true
-			for surface in host.render_mesh.mesh.get_surface_count():
-				var arrays := host.render_mesh.mesh.surface_get_arrays(surface)
-				var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL] if arrays[Mesh.ARRAY_NORMAL] != null else PackedVector3Array()
-				if normals.is_empty():
-					normals_valid = false
-				for normal in normals:
-					if absf(normal.length() - 1.0) > 0.001:
-						normals_valid = false
-			_smoke_check(normals_valid, "最终网格应包含有效单位法线", failures)
+		_smoke_check(not host.render_meshes.is_empty(), "最终平滑渲染 Chunk 应已生成", failures)
+		for chunk_instance in host.render_meshes:
+			_smoke_check(chunk_instance.mesh != null and chunk_instance.mesh.get_surface_count() == 1, "每个 Chunk 应只包含一个合批材质 Surface", failures)
+			if chunk_instance.mesh == null:
+				continue
+			var arrays := chunk_instance.mesh.surface_get_arrays(0)
+			var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL] if arrays[Mesh.ARRAY_NORMAL] != null else PackedVector3Array()
+			var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV] if arrays[Mesh.ARRAY_TEX_UV] != null else PackedVector2Array()
+			_smoke_check(normals.size() == arrays[Mesh.ARRAY_VERTEX].size() and uvs.size() == normals.size(), "Chunk 应保留完整法线和 UV0", failures)
+			for normal in normals:
+				_smoke_check(absf(normal.length() - 1.0) <= 0.001, "Chunk 法线应保持单位长度", failures)
+			_smoke_check(MaterialLibrary.batch_key(chunk_instance.mesh.surface_get_material(0)) != &"unassigned", "Chunk 应具有稳定材质分组键", failures)
 	_toggle_wireframe(true)
-	_smoke_check(wall.render_mesh.material_override == wall.wireframe_material and cylinder_host.render_mesh.material_override == cylinder_host.wireframe_material, "线框开关应作用于两个最终渲染网格", failures)
+	var wireframe_valid := true
+	for host in hosts:
+		for chunk_instance in host.render_meshes:
+			wireframe_valid = wireframe_valid and chunk_instance.material_override == host.wireframe_material
+	_smoke_check(wireframe_valid, "线框开关应作用于全部 Chunk", failures)
 	_toggle_wireframe(false)
-	_smoke_check(wall.render_mesh.material_override == null and cylinder_host.render_mesh.material_override == null, "关闭线框应恢复表面材质", failures)
+	var solid_valid := true
+	for host in hosts:
+		for chunk_instance in host.render_meshes:
+			solid_valid = solid_valid and chunk_instance.material_override == null
+	_smoke_check(solid_valid, "关闭线框应恢复全部 Chunk 的表面材质", failures)
 	if failures.is_empty():
 		print("PCG_SMOKE_TEST_PASS: dual hosts, smoothed CSG render, visible wireframe material, snapping, handles, isolated shrink")
 		get_tree().quit(0)
@@ -759,6 +899,24 @@ func _smoke_mouse_drag(start: Vector2, finish: Vector2) -> void:
 	release.global_position = finish
 	Input.parse_input_event(release)
 	await get_tree().process_frame
+
+func _mesh_is_closed(mesh: Mesh) -> bool:
+	if mesh == null:
+		return false
+	var edges: Dictionary = {}
+	for surface in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(surface)
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		for i in range(0, indices.size(), 3):
+			for corner in 3:
+				var a := indices[i + corner]
+				var b := indices[i + (corner + 1) % 3]
+				var key := "%d|%d" % [mini(a, b), maxi(a, b)]
+				edges[key] = int(edges.get(key, 0)) + 1
+	for count in edges.values():
+		if count != 2:
+			return false
+	return not edges.is_empty()
 
 func _smoke_check(condition: bool, message: String, failures: PackedStringArray) -> void:
 	if not condition:
