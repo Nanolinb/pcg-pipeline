@@ -242,3 +242,21 @@
 
 ### 提交
 - `fix(components): expose host transition above surface`
+
+## 2026-10-28 · Surface Component PCG v0.9.2
+
+### 过渡截面与最终可见性
+- 厚度同时驱动过渡宽度与高度，避免最大厚度仍只有 0.04m 高的平面圈。
+- 弧度 0 使用直线斜面，弧度 1 使用四分之一凹圆弧，对应手绘截面意图。
+- 过渡 Mesh 使用真实三角形法线，增加位置焊接封闭性与 Godot 顺时针有向体积检查。
+- 修复 Chunk 合批仅按 old_index 去重导致同材质多 Surface 顶点错用，改为 surface_index + old_index。
+- 凹形 loft 使用与过渡 CSG 相同的 Mesh 直接渲染，确保实际外露结构可见；开关、消失和调参共享状态。
+- 直接过渡线框使用 UV2 重心坐标，与实体模式同步切换。
+
+### 验证
+- headless 与真实图形视口 smoke 通过，包含正 Z 外露、最大截面高度、封闭性、法线和源顶点保留。
+- 固定视觉场景在平面墙上以厚度 1.0m、弧度 1.0 验证外露过渡。
+- 实际截图确认实体与线框中均可见完整过渡结构。
+
+### 提交
+- `fix(components): render concave host transition correctly`

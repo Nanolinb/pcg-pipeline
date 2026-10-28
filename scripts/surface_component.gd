@@ -3,6 +3,7 @@ extends Node3D
 
 const ManifoldBuilder = preload("res://scripts/manifold_mesh_builder.gd")
 const TransitionBuilder = preload("res://scripts/transition_mesh_builder.gd")
+const SmoothMeshBuilder = preload("res://scripts/smooth_mesh_builder.gd")
 
 var definition: PCGComponentDefinition
 var wall: Node3D
@@ -12,6 +13,8 @@ var transition_enabled: bool = true
 var transition_thickness: float = -1.0
 var transition_curvature: float = 0.65
 var transition_shape: CSGMesh3D
+var transition_render: MeshInstance3D
+var transition_wireframe_enabled: bool = false
 var user_scale: float = 1.0
 var neighborhood_scale: float = 1.0
 var current_scale: float = 1.0
@@ -226,6 +229,12 @@ func set_transition_enabled(value: bool) -> void:
 	transition_enabled = value
 	_rebuild_transition_shape()
 
+func set_transition_wireframe(value: bool) -> void:
+	transition_wireframe_enabled = value
+	if transition_render != null:
+		transition_render.material_override = wall.wireframe_material if value else wall.body_material
+		update_transform()
+
 func _rebuild_transition_shape() -> void:
 	if transition_shape != null:
 		visuals.erase(transition_shape)
@@ -242,6 +251,12 @@ func _rebuild_transition_shape() -> void:
 		_register_shape(transition_shape, Vector3.ZERO)
 		if active:
 			wall.combiner.add_child(transition_shape)
+	if transition_render == null:
+		transition_render = MeshInstance3D.new()
+		transition_render.name = "HostTransitionRender"
+		transition_render.material_override = wall.body_material
+		add_child(transition_render)
+	transition_render.visible = transition_enabled and active
 	wall._reorder()
 	update_transform()
 
@@ -282,6 +297,12 @@ func update_transform() -> void:
 			shape.global_transform = global_transform * shape.get_meta("component_local") as Transform3D
 	if transition_shape != null:
 		transition_shape.mesh = TransitionBuilder.build(self)
+	if transition_render != null:
+		if transition_shape != null:
+			transition_render.mesh = SmoothMeshBuilder.build_wireframe(transition_shape.mesh) if transition_wireframe_enabled else transition_shape.mesh
+		else:
+			transition_render.mesh = null
+		transition_render.visible = transition_enabled and active
 	wall.mark_geometry_dirty()
 
 static func make_preview(component_definition: PCGComponentDefinition) -> Node3D:

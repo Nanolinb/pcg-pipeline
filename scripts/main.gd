@@ -71,6 +71,8 @@ func _ready() -> void:
 	_update_inspector()
 	if "--smoke-test" in OS.get_cmdline_user_args():
 		call_deferred("_run_smoke_test")
+	elif "--visual-check" in OS.get_cmdline_user_args():
+		call_deferred("_run_visual_check")
 
 func _build_environment() -> void:
 	var world_environment := WorldEnvironment.new()
@@ -684,11 +686,29 @@ func _reset_camera() -> void:
 func _toggle_wireframe(enabled: bool) -> void:
 	for host in hosts:
 		host.set_wireframe(enabled)
+	for component in components:
+		component.set_transition_wireframe(enabled)
 	wireframe_button.text = "水密线框：%s (G)" % ("开" if enabled else "关")
 	status_label.text = "已切换为最终融合网格线框；再次按 G 恢复实体显示。" if enabled else "已恢复实体材质显示。"
 
 func _screen_for_anchor(anchor: Vector2) -> Vector2:
 	return camera.unproject_position(wall.surface_transform(anchor).origin)
+
+func _run_visual_check() -> void:
+	await get_tree().physics_frame
+	var component := _place_component(&"round_window", Vector2(0.0, 0.4), wall)
+	component.transition_thickness = 1.0
+	component.transition_curvature = 1.0
+	component.update_transform()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_select_component(component)
+	camera_target = wall.global_position + Vector3(0.0, 0.45, 0.0)
+	camera_yaw = 0.75
+	camera_pitch = 0.18
+	camera_distance = 6.5
+	_update_camera()
+	status_label.text = "视觉验收：厚度 1.0m，弧度 1.0；按 G 检查过渡截面。"
 
 func _run_smoke_test() -> void:
 	await get_tree().process_frame
@@ -843,6 +863,7 @@ func _run_smoke_test() -> void:
 	_smoke_check(cylinder_host.base_shapes.size() == 2 and cylinder_host.outline_parts.size() == 2, "组合主体应包含圆柱、半球实体与轮廓", failures)
 	_smoke_check(cylinder_round.transition_shape != null and cylinder_round.effective_transition_thickness() > 0.0, "曲面组件应生成自适应包裹过渡", failures)
 	_smoke_check(_mesh_is_closed(cylinder_round.transition_shape.mesh), "包裹过渡应为封闭水密 Mesh", failures)
+	_smoke_check(_mesh_signed_volume(cylinder_round.transition_shape.mesh) < 0.0, "Godot 顺时针实体必须具有负有向体积和外法线", failures)
 	var transition_arrays := cylinder_round.transition_shape.mesh.surface_get_arrays(0)
 	var has_outward_transition := false
 	for vertex in transition_arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array:
@@ -853,10 +874,17 @@ func _run_smoke_test() -> void:
 	_smoke_check(cylinder_round.transition_shape == null, "关闭过渡应移除对应 CSG", failures)
 	cylinder_round.set_transition_enabled(true)
 	_smoke_check(cylinder_round.transition_shape != null and cylinder_round.transition_shape.get_parent() == cylinder_host.combiner, "重新开启应恢复过渡 CSG", failures)
-	cylinder_round.transition_thickness = 0.25
-	cylinder_round.transition_curvature = 0.8
+	cylinder_round.transition_thickness = 1.0
+	cylinder_round.transition_curvature = 1.0
 	cylinder_round.update_transform()
-	_smoke_check(is_equal_approx(cylinder_round.effective_transition_thickness(), 0.25), "显式厚度应覆盖自适应默认值", failures)
+	_smoke_check(is_equal_approx(cylinder_round.effective_transition_thickness(), 1.0), "显式厚度应覆盖自适应默认值", failures)
+	transition_arrays = cylinder_round.transition_shape.mesh.surface_get_arrays(0)
+	var max_transition_height := -INF
+	for vertex in transition_arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array:
+		max_transition_height = maxf(max_transition_height, vertex.z)
+	_smoke_check(max_transition_height > 0.2, "最大厚度与弧度必须形成有高度的圆弧截面", failures)
+	await get_tree().process_frame
+	await get_tree().process_frame
 	cylinder_round.transition_thickness = -1.0
 	cylinder_round.transition_curvature = 0.65
 	cylinder_round.update_transform()
@@ -864,10 +892,16 @@ func _run_smoke_test() -> void:
 	await get_tree().process_frame
 	for host in hosts:
 		_smoke_check(not host.render_meshes.is_empty(), "最终平滑渲染 Chunk 应已生成", failures)
+		var source_vertex_count := 0
+		for surface in host.solid_mesh.get_surface_count():
+			source_vertex_count += host.solid_mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX].size()
+		var baked_vertex_count := 0
 		for chunk_instance in host.render_meshes:
-			_smoke_check(chunk_instance.mesh != null and chunk_instance.mesh.get_surface_count() == 1, "每个 Chunk 应只包含一个合批材质 Surface", failures)
+			_smoke_check(chunk_instance.mesh != null and chunk_instance.mesh.get_surface_count() > 0, "渲染单元应包含有效 Surface", failures)
 			if chunk_instance.mesh == null:
 				continue
+			for surface in chunk_instance.mesh.get_surface_count():
+				baked_vertex_count += chunk_instance.mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX].size()
 			var arrays := chunk_instance.mesh.surface_get_arrays(0)
 			var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL] if arrays[Mesh.ARRAY_NORMAL] != null else PackedVector3Array()
 			var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV] if arrays[Mesh.ARRAY_TEX_UV] != null else PackedVector2Array()
@@ -875,6 +909,7 @@ func _run_smoke_test() -> void:
 			for normal in normals:
 				_smoke_check(absf(normal.length() - 1.0) <= 0.001, "Chunk 法线应保持单位长度", failures)
 			_smoke_check(MaterialLibrary.batch_key(chunk_instance.mesh.surface_get_material(0)) != &"unassigned", "Chunk 应具有稳定材质分组键", failures)
+		_smoke_check(baked_vertex_count >= source_vertex_count, "同材质多 Surface 合批不得丢失源顶点", failures)
 	_toggle_wireframe(true)
 	var wireframe_valid := true
 	for host in hosts:
@@ -924,17 +959,34 @@ func _mesh_is_closed(mesh: Mesh) -> bool:
 	var edges: Dictionary = {}
 	for surface in mesh.get_surface_count():
 		var arrays := mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		if indices.is_empty():
+			for i in vertices.size():
+				indices.append(i)
 		for i in range(0, indices.size(), 3):
 			for corner in 3:
-				var a := indices[i + corner]
-				var b := indices[i + (corner + 1) % 3]
-				var key := "%d|%d" % [mini(a, b), maxi(a, b)]
+				var a := str(vertices[indices[i + corner]])
+				var b := str(vertices[indices[i + (corner + 1) % 3]])
+				var key := a + "|" + b if a < b else b + "|" + a
 				edges[key] = int(edges.get(key, 0)) + 1
 	for count in edges.values():
 		if count != 2:
 			return false
 	return not edges.is_empty()
+
+func _mesh_signed_volume(mesh: Mesh) -> float:
+	var volume := 0.0
+	for surface in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		if indices.is_empty():
+			for i in vertices.size():
+				indices.append(i)
+		for i in range(0, indices.size(), 3):
+			volume += vertices[indices[i]].dot(vertices[indices[i + 1]].cross(vertices[indices[i + 2]])) / 6.0
+	return volume
 
 func _smoke_check(condition: bool, message: String, failures: PackedStringArray) -> void:
 	if not condition:

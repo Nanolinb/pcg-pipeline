@@ -9,6 +9,7 @@ static func build(component: Node3D) -> ArrayMesh:
 	var root_scale := 1.0 + definition.root_flare if definition.shape == PCGComponentDefinition.Shape.ROUND_WINDOW else 1.0
 	var inner_half := (definition.size * 0.5 - Vector2.ONE * definition.frame_width * 0.25) * root_scale
 	var outer_half := inner_half + Vector2.ONE * thickness
+	var transition_height := minf(maxf(thickness * 0.65, 0.06), definition.depth * 0.85)
 	var inner_top: Array[Vector3] = []
 	var outer_top: Array[Vector3] = []
 	var outer_bottom: Array[Vector3] = []
@@ -16,14 +17,14 @@ static func build(component: Node3D) -> ArrayMesh:
 		var angle := TAU * float(i) / float(segments)
 		var inner := _outline_point(angle, inner_half, definition.shape)
 		var outer := _outline_point(angle, outer_half, definition.shape)
-		inner_top.append(Vector3(inner.x, inner.y, maxf(definition.root_embed * 0.35, 0.04)))
+		inner_top.append(Vector3(inner.x, inner.y, transition_height))
 		var host := _host_point(component, outer)
 		outer_top.append(host["point"])
 		outer_bottom.append(host["point"] - host["normal"] * 0.12)
 	var rings: Array = []
 	for step in range(profile_steps + 1):
 		var t := float(step) / float(profile_steps)
-		var height_t := pow(t, lerpf(2.1, 0.72, component.transition_curvature))
+		var height_t := lerpf(t, sin(t * PI * 0.5), component.transition_curvature)
 		var ring: Array[Vector3] = []
 		for i in segments:
 			var point := outer_top[i].lerp(inner_top[i], t)
@@ -36,12 +37,10 @@ static func build(component: Node3D) -> ArrayMesh:
 	rings.append(inner_bottom)
 	rings.append(outer_bottom)
 	var vertices := PackedVector3Array()
-	var normals := PackedVector3Array()
 	var indices := PackedInt32Array()
 	for ring in rings:
 		for point in ring:
 			vertices.append(point)
-			normals.append(Vector3.UP)
 	for ring_index in range(rings.size() - 1):
 		for i in segments:
 			var next := (i + 1) % segments
@@ -54,14 +53,13 @@ static func build(component: Node3D) -> ArrayMesh:
 	for i in segments:
 		var next := (i + 1) % segments
 		_add_quad(indices, last_ring * segments + i, last_ring * segments + next, i, next, true)
-	var arrays: Array = []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_NORMAL] = normals
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for index in indices:
+		surface.add_vertex(vertices[index])
+	surface.index()
+	surface.generate_normals()
+	return surface.commit()
 
 static func _outline_point(angle: float, half_size: Vector2, shape: PCGComponentDefinition.Shape) -> Vector2:
 	var direction := Vector2(cos(angle), sin(angle))
