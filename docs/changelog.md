@@ -1,5 +1,23 @@
 # 修改记录
 
+## 2026-10-29 · BASE-05 共享内核 Spike 与 BASE-06 契约评审
+
+### 共享载体
+- 新增独立 `shared/addons/pcg_shared/`，根工程、PipeWeaver 和最小第三消费者通过相对目录链接使用同一物理来源。
+- 以独立 Material Profile 验证资源 API、格式版本、语义哈希、保存/加载和本地资源行为不变。
+- 三个消费者在一次性副本中完成无 `.godot/` 缓存的重导入，无重复类名、UID、Autoload 或插件缓存冲突；断链阴性对照真实失败。
+- 统一门禁纳入共享包冷导入，并同时检查进程退出码与明确 PASS 标记，避免 Godot `-s` 解析错误假阳性。
+
+### v0.14 公共契约
+- 新增 `docs/core_contracts.md`，冻结稳定 ID、格式迁移、编辑命令、确定性随机流、表面宿主、规范化签名、原子保存与共享包边界。
+- 明确 PipeWeaver 内存 history 在 v0.19 适配，不在 v0.14 同时重写两个主程序。
+- `docs/requirements.md` 记录共享核心唯一来源和禁止双向复制同步规则。
+
+### 验证与版本点
+- `tools/run_gate.sh` 全部通过；根工程/PipeWeaver/第三消费者 Spike 分别通过 25、25、23 项检查。
+- 基线保护：`v0.12.0-baseline`；原有材质工作、自动回归、规划基线分别建立独立提交。
+- 本检查点：`test(core): verify shared addon loading`。
+
 ## 2026-10-29 · Roadmap 自检与 v0.13 基线工作启动
 
 ### 计划自检与修订
