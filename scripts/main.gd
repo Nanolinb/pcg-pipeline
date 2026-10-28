@@ -516,7 +516,7 @@ func _select_or_drag(screen_position: Vector2) -> void:
 		handle_drag = handle
 		handle_start_mouse = screen_position
 		handle_start_angle = selected.attachment_angle_degrees
-		handle_start_scale = selected.user_scale
+		handle_start_scale = selected.current_scale
 		selected.set_transition_deferred(true)
 		dragging_component = false
 		status_label.text = "拖动角度手柄：上下调整法线倾角" if handle == "angle" else "拖动缩放手柄：左右调整整体尺寸"
@@ -545,6 +545,7 @@ func _drag_transform_handle(screen_position: Vector2) -> void:
 	if handle_drag == "angle":
 		_on_attachment_angle_changed(clampf(handle_start_angle - delta.y * 0.4, -90.0, 90.0))
 	elif handle_drag == "scale":
+		selected.neighborhood_scale = 1.0
 		selected.set_user_scale(handle_start_scale + delta.x * 0.005)
 		_solve_neighborhood(selected)
 
@@ -574,7 +575,7 @@ func _move_component(component: PCGSurfaceComponent, anchor: Vector2) -> void:
 	_solve_neighborhood(component)
 
 func _solve_neighborhood(dragged: PCGSurfaceComponent = null) -> void:
-	var scales := OverlapSolver.solve(components, dragged)
+	var scales := OverlapSolver.solve(components, dragged, selected)
 	for component in components:
 		component.apply_scale(scales[component.get_instance_id()])
 		if component == selected:
@@ -858,8 +859,27 @@ func _run_smoke_test() -> void:
 	_move_component(round_window, square_window.anchor + Vector2(0.0, 0.6))
 	_smoke_check(not square_window.active, "低于阈值应使方窗消失", failures)
 	_smoke_check(square_window.cutter.get_parent() == null, "消失组件应移除 CSG 开洞体", failures)
+	_select_component(round_window)
 	_move_component(round_window, Vector2(0.0, 1.5))
 	_smoke_check(square_window.active and is_equal_approx(square_window.current_scale, 1.0), "移开后方窗应完整恢复", failures)
+	_move_component(round_window, square_window.anchor + Vector2(0.0, 1.35))
+	var compressed_scale := square_window.current_scale
+	_select_component(square_window)
+	_move_component(square_window, Vector2(1.8, -0.8))
+	_smoke_check(is_equal_approx(square_window.current_scale, compressed_scale), "再次选中并拖动压缩组件必须保留当前尺寸", failures)
+	_move_component(round_window, Vector2(0.0, 1.5))
+	_smoke_check(is_equal_approx(square_window.current_scale, compressed_scale), "被选中的压缩组件不得因移开而自动恢复", failures)
+	_move_component(round_window, square_window.anchor + Vector2(0.0, 0.6))
+	_smoke_check(not square_window.active, "再次压缩到阈值后组件应保持消失", failures)
+	handle_drag = "scale"
+	handle_start_mouse = Vector2.ZERO
+	handle_start_scale = square_window.current_scale
+	_drag_transform_handle(Vector2(100.0, 0.0))
+	_smoke_check(square_window.current_scale > 0.0 and square_window.active, "手动缩放必须能从消失状态恢复", failures)
+	handle_drag = ""
+	square_window.user_scale = 1.0
+	square_window.neighborhood_scale = 1.0
+	square_window.apply_scale(1.0)
 	var count := components.size()
 	_begin_library_drag(&"round_window")
 	_update_library_drag(Vector2(4.0, 4.0))
@@ -913,6 +933,8 @@ func _run_smoke_test() -> void:
 	_smoke_check(cylinder_round.visuals[0].material == shared_frame and cylinder_round.visuals[0].mesh == original_frame_mesh, "贴图变更不得替换材质实例或重建组件网格", failures)
 	frame_slot_panel._clear_slot(&"base_color")
 	_smoke_check(not shared_frame.get_shader_parameter("use_base_texture") and cylinder_round.visuals[0].material == shared_frame, "清除贴图应恢复默认回退并保持共享实例", failures)
+	_select_component(round_window)
+	_move_component(round_window, Vector2(0.0, 1.5))
 	_move_component(cylinder_round, square_window.anchor)
 	_smoke_check(is_equal_approx(square_window.current_scale, 1.0) and is_equal_approx(cylinder_round.current_scale, 1.0), "不同主体的组件不应互相缩放", failures)
 	var curved_anchor := Vector2(1.0, 0.4)
@@ -1068,6 +1090,8 @@ func _run_smoke_test() -> void:
 		for chunk_instance in host.render_meshes:
 			solid_valid = solid_valid and chunk_instance.material_override == null
 	_smoke_check(solid_valid, "关闭线框应恢复全部 Chunk 的表面材质", failures)
+	for i in 6:
+		await get_tree().process_frame
 	if failures.is_empty():
 		print("PCG_SMOKE_TEST_PASS: dual hosts, smoothed CSG render, visible wireframe material, snapping, handles, isolated shrink")
 		get_tree().quit(0)

@@ -191,7 +191,7 @@ func _rebuild_render_chunks() -> void:
 		return
 	for child in render_root.get_children():
 		render_root.remove_child(child)
-		child.queue_free()
+		child.free()
 	render_meshes.clear()
 	render_mesh = null
 	if solid_mesh == null:

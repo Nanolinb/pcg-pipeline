@@ -1,20 +1,18 @@
 class_name PCGOverlapSolver
 extends RefCounted
 
-static func solve(components: Array, dragged: Node3D = null) -> Dictionary:
+static func solve(components: Array, dragged: Node3D = null, preserved: Node3D = null) -> Dictionary:
 	var scales: Dictionary = {}
 	for component in components:
-		scales[component.get_instance_id()] = 1.0
+		scales[component.get_instance_id()] = component.neighborhood_scale
 	for target in components:
 		if target == dragged:
 			continue
-		var allowed: float = 1.0
+		var allowed: float = target.neighborhood_scale if target == preserved else 1.0
 		for influencer in components:
 			if influencer == target or influencer.wall != target.wall or not _influences(influencer, target, dragged):
 				continue
-			var influencer_scale: float = scales.get(influencer.get_instance_id(), 1.0)
-			if influencer == dragged:
-				influencer_scale = 1.0
+			var influencer_scale: float = influencer.neighborhood_scale
 			var distance: float = target.wall.surface_distance(target.anchor, influencer.anchor)
 			var required: float = influencer.definition.footprint_radius() * influencer.user_scale * influencer_scale + influencer.definition.overlap_gap
 			var available: float = (distance - required) / (target.definition.footprint_radius() * target.user_scale)

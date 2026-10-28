@@ -365,7 +365,7 @@ func update_transform() -> void:
 		return
 	var tilt := Transform3D(Basis(Vector3.RIGHT, deg_to_rad(attachment_angle_degrees)), Vector3.ZERO)
 	global_transform = wall.surface_transform(anchor) * tilt
-	scale = Vector3.ONE * current_scale
+	scale = Vector3.ONE * maxf(current_scale, 0.001)
 	if selection_lines != null:
 		selection_lines.visible = selection_lines.visible and active
 	if gizmo_root != null:
