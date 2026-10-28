@@ -1,3 +1,4 @@
+@tool
 class_name PCGSmoothMeshBuilder
 extends RefCounted
 

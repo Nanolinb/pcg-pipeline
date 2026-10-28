@@ -1,3 +1,4 @@
+@tool
 class_name PCGSurfaceComponent
 extends Node3D
 
@@ -6,23 +7,24 @@ const TransitionBuilder = preload("res://scripts/transition_mesh_builder.gd")
 const SmoothMeshBuilder = preload("res://scripts/smooth_mesh_builder.gd")
 const OutlineGeometry = preload("res://scripts/outline_geometry.gd")
 
-var definition: PCGComponentDefinition
+@export_storage var definition: PCGComponentDefinition
 var wall: Node3D
-var anchor := Vector2.ZERO
-var attachment_angle_degrees: float = 0.0
-var transition_enabled: bool = true
-var transition_thickness: float = -1.0
-var transition_curvature: float = 0.65
-var transition_density: float = 1.0
-var transition_lod: int = 0
+@export_storage var wall_path: NodePath
+@export_storage var anchor := Vector2.ZERO
+@export_storage var attachment_angle_degrees: float = 0.0
+@export_storage var transition_enabled: bool = true
+@export_storage var transition_thickness: float = -1.0
+@export_storage var transition_curvature: float = 0.65
+@export_storage var transition_density: float = 1.0
+@export_storage var transition_lod: int = 0
 var transition_shape: CSGMesh3D
 var transition_render: MeshInstance3D
 var transition_wireframe_enabled: bool = false
 var transition_mesh_cache: ArrayMesh
 var transition_signature: String = ""
 var defer_transition_csg: bool = false
-var user_scale: float = 1.0
-var neighborhood_scale: float = 1.0
+@export_storage var user_scale: float = 1.0
+@export_storage var neighborhood_scale: float = 1.0
 var current_scale: float = 1.0
 var active: bool = true
 var cutter: CSGShape3D
@@ -34,15 +36,28 @@ var direct_root: Node3D
 var direct_meshes: Array[MeshInstance3D] = []
 var direct_preview_mode: bool = false
 
+func _ready() -> void:
+	if wall == null and not wall_path.is_empty():
+		wall = get_node_or_null(wall_path) as Node3D
+	if definition == null or wall == null or area != null:
+		return
+	_initialize()
+	apply_scale(neighborhood_scale)
+	wall.register_component(self)
+
 func configure(component_definition: PCGComponentDefinition, host_wall: Node3D) -> void:
 	definition = component_definition
 	wall = host_wall
+	wall_path = get_path_to(host_wall)
 	attachment_angle_degrees = definition.attachment_angle_degrees
 	transition_enabled = definition.transition_enabled
 	transition_thickness = definition.transition_thickness
 	transition_curvature = definition.transition_curvature
 	transition_density = definition.transition_density
 	transition_lod = definition.transition_lod
+	_initialize()
+
+func _initialize() -> void:
 	name = "Component_%s" % definition.id
 	_build_pick_area()
 	_build_selection()

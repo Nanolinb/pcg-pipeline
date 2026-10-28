@@ -1,3 +1,4 @@
+@tool
 class_name PCGFusedWall
 extends Node3D
 
@@ -9,14 +10,14 @@ enum SurfaceKind {
 	DOME_CYLINDER,
 }
 
-var surface_kind: SurfaceKind = SurfaceKind.PLANE
-var display_name: String = "平面主体墙"
-var wall_size := Vector3(6.0, 4.6, 0.36)
-var cylinder_radius: float = 1.35
-var cylinder_height: float = 3.8
-var cylinder_depth: float = 0.7
-var body_color := Color("3d777b")
-var transition_density: float = 1.0
+@export_storage var surface_kind: SurfaceKind = SurfaceKind.PLANE
+@export_storage var display_name: String = "平面主体墙"
+@export_storage var wall_size := Vector3(6.0, 4.6, 0.36)
+@export_storage var cylinder_radius: float = 1.35
+@export_storage var cylinder_height: float = 3.8
+@export_storage var cylinder_depth: float = 0.7
+@export_storage var body_color := Color("3d777b")
+@export_storage var transition_density: float = 1.0
 var thickness: float:
 	get:
 		return wall_size.z if surface_kind == SurfaceKind.PLANE else cylinder_depth
