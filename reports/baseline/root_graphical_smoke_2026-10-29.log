@@ -1,0 +1,66 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+OpenGL API 4.1 Metal - 90.5 - Compatibility - Using Device: Apple - Apple M3 Pro
+
+PCG_SMOKE_TEST_PASS: dual hosts, smoothed CSG render, visible wireframe material, snapping, handles, isolated shrink
+ERROR: Pages in use exist at exit in PagedAllocator: N20RasterizerSceneGLES323GeometryInstanceSurfaceE
+   at: ~PagedAllocator (./core/templates/paged_allocator.h:169)
+ERROR: Pages in use exist at exit in PagedAllocator: N20RasterizerSceneGLES321GeometryInstanceGLES3E
+   at: ~PagedAllocator (./core/templates/paged_allocator.h:169)
+ERROR: 8 RID allocations of type 'N5GLES34MeshE' were leaked at exit.
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+ERROR: 2 shaders of type SceneShaderGLES3 were never freed
+   at: ~ShaderGLES3 (drivers/gles3/shader_gles3.cpp:836)
+ERROR: 3 RID allocations of type 'N5GLES38MaterialE' were leaked at exit.
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+ERROR: 2 RID allocations of type 'N5GLES36ShaderE' were leaked at exit.
+ERROR: Buffer with GL ID of 351: leaked 14400 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 352: leaked 8640 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 279: leaked 720 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 280: leaked 288 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 281: leaked 720 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 282: leaked 288 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 289: leaked 720 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 290: leaked 288 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 355: leaked 720 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 356: leaked 288 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 357: leaked 720 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 358: leaked 288 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 359: leaked 720 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 360: leaked 288 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: 7 RID allocations of type 'N17RendererSceneCull8InstanceE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+     at: cleanup (core/object/object.cpp:2641)
+ERROR: 1 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+ERROR: Pages in use exist at exit in PagedAllocator: N7Variant5Pools12BucketMediumE
+   at: ~PagedAllocator (./core/templates/paged_allocator.h:169)

@@ -27,13 +27,14 @@
 
 - 根工程 headless smoke 已通过，功能日志见 `reports/baseline/root_smoke_2026-10-29.log`。
 - PipeWeaver 当前启动与实际生成已通过，日志见 `reports/baseline/pipeweaver_startup_2026-10-29.log`。
-- 图形 FPS、P95 帧时间、内存与完整 RID 基线尚未测量；完成本机图形测试后填入，当前不得声称通过性能验收。
+- 本机图形输入、截图和 RID 证据已补齐，详见 `reports/baseline/graphical_acceptance.md`。
+- G0 工程即时日志为视觉 116 FPS、拖动 115 FPS；该值只作参考。P95、30 秒中位数和内存趋势尚未测量，不声称通过这些后续性能指标。
 
 ## 后续固定场景指标
 
 | 场景 | 指标 | 当前状态 |
 |---|---|---|
-| G0/G1 | 功能、网格统计、截图、资源基线 | headless 部分完成 |
+| G0/G1 | 功能、网格统计、截图、资源基线 | v0.13 基线完成 |
 | G3_Building | 单主体融合耗时、30 秒交互帧率 | 待场景引入 |
 | G4_Block | 60 栋建筑，单地块更新时间目标 < 1s，交互目标 ≥ 30 FPS | 待场景引入 |
 | G5_Districts | 流送延迟、内存、缓存命中、导航稳定 | 待场景引入 |
