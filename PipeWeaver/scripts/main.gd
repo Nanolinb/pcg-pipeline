@@ -15,6 +15,8 @@ var marker_material: StandardMaterial3D
 var selected_marker_material: StandardMaterial3D
 var axis_material: StandardMaterial3D
 var selection_material: StandardMaterial3D
+var pipe_profile: PCGMaterialProfile = preload("res://assets/pipe_material.tres")
+var texture_slot_panel: PCGTextureSlotPanel
 
 var control_points: Array[Vector3] = []
 var control_normals: Array[Vector3] = []
@@ -193,11 +195,7 @@ func _build_camera() -> void:
 	add_child(camera)
 
 func _build_materials() -> void:
-	pipe_material = MaterialLibrary.shader(&"pipe/body", preload("res://shaders/pipe_grid.gdshader"), {
-		"base_texture": TextureLibrary.base_color(),
-		"detail_texture": TextureLibrary.detail_color(),
-		"detail_normal_texture": TextureLibrary.detail_normal(),
-		"orm_texture": TextureLibrary.orm(),
+	pipe_material = MaterialLibrary.profile_shader(&"pipe/body", preload("res://shaders/pipe_grid.gdshader"), pipe_profile, _pipe_fallback_textures(), {
 		"ao_texture": TextureLibrary.bake_ao([Vector3.ZERO, Vector3.ONE], []),
 	})
 	connector_material = _surface_material(&"pipe/connector", Color("d29b45"), 0.3, 0.72)
@@ -360,6 +358,12 @@ func _build_ui() -> void:
 	_add_spin(box, "手动统一步长 m", 0.02, 1.0, 0.01, 0.18, _on_manual_step_changed)
 	_add_hint(box, "变径与离墙变化段自动使用精细步长，UV 不拉伸")
 	_add_heading(box, "PBR 贴图")
+	texture_slot_panel = PCGTextureSlotPanel.new()
+	texture_slot_panel.profile = pipe_profile
+	texture_slot_panel.texture_changed.connect(_on_pipe_texture_changed)
+	texture_slot_panel.load_failed.connect(func(message: String): status_label.text = message)
+	box.add_child(texture_slot_panel)
+	_add_hint(box, "空槽自动使用默认 PBR 贴图；× 清除自定义并回退")
 	_add_spin(box, "Detail 平铺倍率", 1.0, 16.0, 0.5, detail_tiling, _on_detail_tiling_changed)
 	_add_spin(box, "Detail 混合强度", 0.0, 1.0, 0.02, detail_strength, _on_detail_strength_changed)
 	_add_spin(box, "Detail Normal 强度", 0.0, 1.5, 0.05, normal_strength, _on_normal_strength_changed)
@@ -1502,21 +1506,36 @@ func _current_pipe_material() -> ShaderMaterial:
 		return pipe_material
 	if baked_ao_texture == null:
 		_update_ao_texture()
-	var parameters := {
-		"base_texture": TextureLibrary.base_color(),
-		"detail_texture": TextureLibrary.detail_color(),
-		"detail_normal_texture": TextureLibrary.detail_normal(),
-		"orm_texture": TextureLibrary.orm(),
+	return MaterialLibrary.profile_shader(StringName("pipe/body_ao_%d" % current_pipe_id), pipe_material.shader, pipe_profile, _pipe_fallback_textures(), {
 		"ao_texture": baked_ao_texture,
 		"detail_tiling": detail_tiling,
 		"detail_strength": detail_strength,
 		"normal_strength": normal_strength,
 		"ao_strength": ao_strength,
+	})
+
+func _pipe_fallback_textures() -> Dictionary:
+	return {
+		&"base_color": TextureLibrary.base_color(),
+		&"detail": TextureLibrary.detail_color(),
+		&"normal": TextureLibrary.detail_normal(),
+		&"orm": TextureLibrary.orm(),
 	}
-	var material := MaterialLibrary.shader(StringName("pipe/body_ao_%d" % current_pipe_id), pipe_material.shader, parameters)
-	for parameter in parameters:
-		material.set_shader_parameter(parameter, parameters[parameter])
-	return material
+
+func _on_pipe_texture_changed(_slot: StringName, _texture: Texture2D) -> void:
+	var textures := _pipe_fallback_textures()
+	for slot in PCGMaterialProfile.SLOT_IDS:
+		var custom := pipe_profile.texture_for_slot(slot)
+		if custom != null:
+			textures[slot] = custom
+	MaterialLibrary.update_shaders(&"pipe/body", {
+		"tint": pipe_profile.tint,
+		"base_texture": textures[&"base_color"],
+		"detail_texture": textures[&"detail"],
+		"detail_normal_texture": textures[&"normal"],
+		"orm_texture": textures[&"orm"],
+	})
+	status_label.text = "管道共享 PBR 贴图已更新；AO 与 UV 保持独立。"
 
 func _on_clearance_changed(value: float) -> void:
 	clearance = value

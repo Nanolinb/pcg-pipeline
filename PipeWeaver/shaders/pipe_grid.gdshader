@@ -1,6 +1,7 @@
 shader_type spatial;
 render_mode diffuse_burley, specular_schlick_ggx;
 
+uniform vec4 tint : source_color = vec4(1.0);
 uniform sampler2D base_texture : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D detail_texture : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D detail_normal_texture : hint_normal, filter_linear_mipmap, repeat_enable;
@@ -12,7 +13,7 @@ uniform float normal_strength = 0.55;
 uniform float ao_strength = 0.0;
 
 void fragment() {
-	vec3 base = texture(base_texture, UV).rgb;
+	vec3 base = tint.rgb * texture(base_texture, UV).rgb;
 	vec3 detail = texture(detail_texture, UV * detail_tiling).rgb;
 	vec3 orm = texture(orm_texture, UV).rgb;
 	vec3 baked_ao = texture(ao_texture, UV2).rgb;
