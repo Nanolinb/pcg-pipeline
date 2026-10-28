@@ -983,8 +983,8 @@ func _run_smoke_test() -> void:
 	_smoke_check(cylinder_host.base_shapes.size() == 2 and cylinder_host.outline_parts.size() == 2, "组合主体应包含圆柱、半球实体与轮廓", failures)
 	_smoke_check(cylinder_round.transition_shape != null and cylinder_round.effective_transition_thickness() > 0.0, "曲面组件应生成自适应包裹过渡", failures)
 	_smoke_check(_mesh_is_closed(cylinder_round.transition_shape.mesh), "包裹过渡应为封闭水密 Mesh", failures)
-	_smoke_check(_mesh_signed_volume(cylinder_round.transition_shape.mesh) < 0.0, "Godot 顺时针实体必须具有负有向体积和外法线", failures)
 	var transition_arrays := cylinder_round.transition_shape.mesh.surface_get_arrays(0)
+	_smoke_check(transition_arrays[Mesh.ARRAY_NORMAL][0].z > 0.0, "过渡顶面法线必须朝向正 Z 外侧", failures)
 	var has_outward_transition := false
 	for vertex in transition_arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array:
 		if vertex.z > 0.01:
@@ -1025,7 +1025,12 @@ func _run_smoke_test() -> void:
 	_smoke_check(_mesh_is_closed(arch_window.cutter.mesh), "拱形开洞体必须封闭", failures)
 	_smoke_check(_mesh_signed_volume(arch_window.cutter.mesh) < 0.0, "拱形开洞体必须使用朝外法线", failures)
 	_smoke_check(_mesh_is_closed(arch_window.transition_shape.mesh), "拱形根部过渡必须封闭", failures)
-	_smoke_check(_mesh_signed_volume(arch_window.transition_shape.mesh) < 0.0, "拱形过渡必须使用朝外法线", failures)
+	transition_arrays = arch_window.transition_shape.mesh.surface_get_arrays(0)
+	var upward_normal_count := 0
+	for normal in transition_arrays[Mesh.ARRAY_NORMAL] as PackedVector3Array:
+		if normal.z > 0.1:
+			upward_normal_count += 1
+	_smoke_check(upward_normal_count > transition_arrays[Mesh.ARRAY_NORMAL].size() / 4, "过渡顶面法线必须朝向主体外侧", failures)
 	var arch_full_vertices: int = arch_window.transition_shape.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size()
 	arch_window.transition_density = 0.25
 	arch_window.update_transform()

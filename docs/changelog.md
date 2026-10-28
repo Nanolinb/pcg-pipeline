@@ -351,3 +351,19 @@
 
 ### 提交
 - `fix(components): preserve selected component scale`
+
+## 2026-10-28 · Surface Component PCG v0.11.2
+
+### 过渡法线修复
+- 不再通过整体翻转或有向体积推断过渡顶面方向。
+- 顶面法线改为根部 XY 径向方向与正 Z 高度共同计算，避免内外圈深度差压低头面。
+- 直接写顶点、索引与截面法线，不经过会再次翻转法线的索引后处理。
+- 保持原有 CSG 拓扑、拱形点序和直接渲染路径。
+
+### 验证
+- 新增过渡顶面正 Z 法线断言，圆/方/拱形及既有交互回归通过。
+- 实际拱形场景确认实体与线框外观。
+- Godot 退出时仍有引擎侧 RID 清理警告。
+
+### 提交
+- `fix(components): correct transition surface normals`

@@ -63,13 +63,27 @@ static func build(component: Node3D) -> ArrayMesh:
 			var swap := indices[i + 1]
 			indices[i + 1] = indices[i + 2]
 			indices[i + 2] = swap
-	var surface := SurfaceTool.new()
-	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for index in indices:
-		surface.add_vertex(vertices[index])
-	surface.index()
-	surface.generate_normals()
-	return surface.commit()
+	var normals := PackedVector3Array()
+	for vertex_index in vertices.size():
+		var ring_index := vertex_index / segments
+		var outline_index := vertex_index % segments
+		var normal := Vector3.DOWN
+		if ring_index <= profile_steps:
+			var radial := Vector3(
+				outer_top[outline_index].x - inner_top[outline_index].x,
+				outer_top[outline_index].y - inner_top[outline_index].y,
+				0.0
+			).normalized()
+			normal = (radial + Vector3.BACK * (transition_height / maxf(thickness, 0.001))).normalized()
+		normals.append(normal)
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
 
 static func _outline_points(half_size: Vector2, shape: PCGComponentDefinition.Shape, segments: int) -> Array[Vector2]:
 	if shape == PCGComponentDefinition.Shape.ARCH_WINDOW:
