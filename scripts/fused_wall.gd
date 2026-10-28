@@ -36,6 +36,9 @@ var wireframe_enabled: bool = false
 var render_dirty: bool = true
 var render_cooldown: float = 0.0
 var render_refresh_interval: float = 0.1
+var preview_mode: bool = false
+var base_preview_root: Node3D
+var base_preview_meshes: Array[MeshInstance3D] = []
 var components: Array = []
 
 func _ready() -> void:
@@ -80,10 +83,67 @@ func _build_render_mesh() -> void:
 	render_root.name = "SmoothedFusionChunks"
 	add_child(render_root)
 	wireframe_material = MaterialLibrary.shader(&"editor/watertight_wireframe", preload("res://shaders/wireframe.gdshader"))
+	_build_base_preview()
 	mark_geometry_dirty()
 
+func _build_base_preview() -> void:
+	base_preview_root = Node3D.new()
+	base_preview_root.name = "UnfusedEditPreview"
+	base_preview_root.visible = false
+	add_child(base_preview_root)
+	for shape in base_shapes:
+		var instance := MeshInstance3D.new()
+		if shape is CSGBox3D:
+			var mesh := BoxMesh.new()
+			mesh.size = shape.size
+			instance.mesh = mesh
+		elif shape is CSGCylinder3D:
+			var mesh := CylinderMesh.new()
+			mesh.top_radius = shape.radius
+			mesh.bottom_radius = shape.radius
+			mesh.height = shape.height
+			mesh.radial_segments = shape.sides
+			instance.mesh = mesh
+		elif shape is CSGSphere3D:
+			var mesh := SphereMesh.new()
+			mesh.radius = shape.radius
+			mesh.height = shape.radius * 2.0
+			mesh.radial_segments = shape.radial_segments
+			mesh.rings = shape.rings
+			instance.mesh = mesh
+		instance.material_override = body_material
+		instance.transform = shape.transform
+		instance.set_meta("source_mesh", instance.mesh)
+		base_preview_root.add_child(instance)
+		base_preview_meshes.append(instance)
+
+func set_preview_mode(value: bool) -> void:
+	preview_mode = value
+	base_preview_root.visible = value
+	render_root.visible = not value
+	for component in components:
+		component.set_direct_preview(value)
+		if not value:
+			merge_component(component)
+	if not value:
+		flush_geometry()
+
+func merge_component(component: Node3D) -> void:
+	if not components.has(component):
+		components.append(component)
+	if component.active:
+		_attach_shapes(component)
+	else:
+		_detach_shapes(component)
+	_reorder()
+	component.apply_csg_state()
+	render_root.visible = true
+	base_preview_root.visible = false
+	flush_geometry()
+
 func mark_geometry_dirty() -> void:
-	render_dirty = true
+	if not preview_mode:
+		render_dirty = true
 
 func flush_geometry() -> void:
 	render_dirty = true
@@ -116,6 +176,10 @@ func _refresh_render_mesh() -> void:
 
 func set_wireframe(enabled: bool) -> void:
 	wireframe_enabled = enabled
+	for instance in base_preview_meshes:
+		var source: Mesh = instance.get_meta("source_mesh")
+		instance.mesh = SmoothMeshBuilder.build_wireframe(source) if enabled else source
+		instance.material_override = wireframe_material if enabled else body_material
 	if render_mesh != null:
 		for instance in render_meshes:
 			instance.material_override = wireframe_material if enabled else null
@@ -332,15 +396,24 @@ func set_highlight(value: bool) -> void:
 func register_component(component: Node3D) -> void:
 	if not components.has(component):
 		components.append(component)
+	if preview_mode:
+		component.set_direct_preview(true)
+		return
 	set_component_active(component, component.active)
 
 func unregister_component(component: Node3D) -> void:
+	if preview_mode:
+		components.erase(component)
+		return
 	_detach_shapes(component)
 	components.erase(component)
 	_reorder()
 	mark_geometry_dirty()
 
 func set_component_active(component: Node3D, value: bool) -> void:
+	if preview_mode:
+		component.set_direct_preview(true)
+		return
 	if value:
 		_attach_shapes(component)
 	else:

@@ -46,6 +46,9 @@ var transition_curvature_spin: SpinBox
 var transition_density_option: OptionButton
 var transition_lod_option: OptionButton
 var wireframe_button: Button
+var deferred_fusion_toggle: CheckButton
+var merge_all_button: Button
+var merge_selected_button: Button
 var frame_slot_panel: PCGTextureSlotPanel
 var glass_slot_panel: PCGTextureSlotPanel
 
@@ -282,6 +285,20 @@ func _build_ui() -> void:
 	_add_hint(inspector, "拖动已放置组件时仍保持吸附。\n橙色球：上下拖动调整法线倾角。\n绿色方块：左右拖动等比缩放。\n0° 表示完全遵循主体表面法线。")
 	_add_heading(inspector, "融合方式")
 	_add_hint(inspector, "主体与组件采用封闭实体 CSG。\n先执行全部开洞差集，再执行窗框\n与玻璃并集。组件消失时移除开洞，\n主体墙面会真实恢复。")
+	deferred_fusion_toggle = CheckButton.new()
+	deferred_fusion_toggle.text = "后合并编辑（轻量预览）"
+	deferred_fusion_toggle.toggled.connect(_on_deferred_fusion_toggled)
+	inspector.add_child(deferred_fusion_toggle)
+	merge_selected_button = Button.new()
+	merge_selected_button.text = "合并选中组件"
+	merge_selected_button.disabled = true
+	merge_selected_button.pressed.connect(_merge_selected)
+	inspector.add_child(merge_selected_button)
+	merge_all_button = Button.new()
+	merge_all_button.text = "全部合并"
+	merge_all_button.disabled = true
+	merge_all_button.pressed.connect(_merge_all)
+	inspector.add_child(merge_all_button)
 	wireframe_button = Button.new()
 	wireframe_button.text = "水密线框：关 (G)"
 	wireframe_button.toggle_mode = true
@@ -588,6 +605,7 @@ func _update_inspector() -> void:
 		transition_curvature_spin.editable = false
 		transition_density_option.disabled = true
 		transition_lod_option.disabled = true
+		merge_selected_button.disabled = true
 		frame_slot_panel.visible = false
 		glass_slot_panel.visible = false
 		return
@@ -606,9 +624,10 @@ func _update_inspector() -> void:
 	transition_curvature_spin.editable = selected.transition_enabled
 	transition_curvature_spin.set_value_no_signal(selected.transition_curvature)
 	transition_density_option.disabled = not selected.transition_enabled
-	transition_density_option.select(clampi(roundi(selected.transition_density / 0.25) - 1, 0, 3))
+	transition_density_option.select([0.25, 0.5, 1.0, 2.0].find(selected.transition_density))
 	transition_lod_option.disabled = not selected.transition_enabled
 	transition_lod_option.select(selected.transition_lod)
+	merge_selected_button.disabled = not selected.wall.preview_mode
 	frame_slot_panel.visible = true
 	glass_slot_panel.visible = true
 	frame_slot_panel.set_profile(selected.definition.frame_profile)
@@ -727,11 +746,37 @@ func _reset_camera() -> void:
 	camera_distance = 12.8
 	_update_camera()
 
+func _on_deferred_fusion_toggled(value: bool) -> void:
+	for host in hosts:
+		host.set_preview_mode(value)
+	merge_all_button.disabled = not value
+	merge_selected_button.disabled = not value or selected == null
+	status_label.text = "后合并编辑已开启；只更新轻量预览。" if value else "已完成全部融合。"
+
+func _merge_selected() -> void:
+	if selected == null:
+		return
+	selected.wall.merge_component(selected)
+	selected.set_direct_preview(false)
+	status_label.text = "已合并选中组件；其他组件继续保持轻量预览。"
+
+func _merge_all() -> void:
+	for host in hosts:
+		host.set_preview_mode(false)
+	for component in components:
+		component.set_direct_preview(false)
+		component.flush_transition_csg()
+	merge_all_button.disabled = true
+	merge_selected_button.disabled = true
+	deferred_fusion_toggle.set_pressed_no_signal(false)
+	status_label.text = "全部主体与组件已完成水密融合。"
+
 func _toggle_wireframe(enabled: bool) -> void:
 	for host in hosts:
 		host.set_wireframe(enabled)
 	for component in components:
 		component.set_transition_wireframe(enabled)
+		component.set_direct_wireframe(enabled)
 	wireframe_button.text = "水密线框：%s (G)" % ("开" if enabled else "关")
 	status_label.text = "已切换为最终融合网格线框；再次按 G 恢复实体显示。" if enabled else "已恢复实体材质显示。"
 
@@ -972,6 +1017,18 @@ func _run_smoke_test() -> void:
 	arch_window.update_transform()
 	var arch_lod_vertices: int = arch_window.transition_shape.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size()
 	_smoke_check(arch_lod_vertices < arch_high_vertices, "LOD 2 必须降低过渡顶点数", failures)
+	arch_window.transition_density = 1.0
+	_update_inspector()
+	_smoke_check(transition_density_option.selected == 2 and transition_density_option.get_item_text(2) == "100%", "密度 1.0 必须默认显示 100%", failures)
+	var before_preview_transform := arch_window.visuals[0].global_transform
+	_on_deferred_fusion_toggled(true)
+	arch_window.anchor.x += 0.2
+	arch_window.update_transform()
+	_smoke_check(arch_window.visuals[0].global_transform == before_preview_transform and arch_window.direct_root.visible, "后合并预览不得更新 CSG 变换", failures)
+	_merge_selected()
+	_smoke_check(not arch_window.direct_root.visible and arch_window.visuals[0].global_transform != before_preview_transform, "合并选中必须提交最新组件状态", failures)
+	_merge_all()
+	_smoke_check(not wall.preview_mode and not cylinder_host.preview_mode, "全部合并必须退出预览模式", failures)
 	await get_tree().process_frame
 	await get_tree().process_frame
 	cylinder_round.transition_thickness = -1.0

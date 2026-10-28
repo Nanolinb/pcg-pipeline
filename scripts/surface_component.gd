@@ -30,6 +30,9 @@ var visuals: Array[CSGShape3D] = []
 var area: Area3D
 var selection_lines: MeshInstance3D
 var gizmo_root: Node3D
+var direct_root: Node3D
+var direct_meshes: Array[MeshInstance3D] = []
+var direct_preview_mode: bool = false
 
 func configure(component_definition: PCGComponentDefinition, host_wall: Node3D) -> void:
 	definition = component_definition
@@ -45,6 +48,7 @@ func configure(component_definition: PCGComponentDefinition, host_wall: Node3D) 
 	_build_selection()
 	_build_gizmos()
 	_build_csg()
+	_build_direct_preview()
 	_rebuild_transition_shape()
 	update_transform()
 
@@ -239,6 +243,44 @@ func _build_csg() -> void:
 		visuals.append(square_glass)
 		_register_shape(square_glass, Vector3(0.0, 0.0, 0.015))
 
+func _build_direct_preview() -> void:
+	direct_root = Node3D.new()
+	direct_root.name = "DirectEditPreview"
+	direct_root.visible = false
+	add_child(direct_root)
+	for shape in visuals:
+		var instance := MeshInstance3D.new()
+		if shape is CSGBox3D:
+			var mesh := BoxMesh.new()
+			mesh.size = shape.size
+			instance.mesh = mesh
+		elif shape is CSGCylinder3D:
+			var mesh := CylinderMesh.new()
+			mesh.top_radius = shape.radius
+			mesh.bottom_radius = shape.radius
+			mesh.height = shape.height
+			mesh.radial_segments = shape.sides
+			instance.mesh = mesh
+		elif shape is CSGMesh3D:
+			instance.mesh = shape.mesh
+		instance.material_override = shape.material
+		instance.transform = shape.get_meta("component_local") as Transform3D
+		instance.set_meta("source_mesh", instance.mesh)
+		instance.set_meta("source_material", instance.material_override)
+		direct_root.add_child(instance)
+		direct_meshes.append(instance)
+
+func set_direct_preview(value: bool) -> void:
+	direct_preview_mode = value
+	if direct_root != null:
+		direct_root.visible = value and active
+
+func set_direct_wireframe(value: bool) -> void:
+	for instance in direct_meshes:
+		var source: Mesh = instance.get_meta("source_mesh")
+		instance.mesh = SmoothMeshBuilder.build_wireframe(source) if value else source
+		instance.material_override = wall.wireframe_material if value else instance.get_meta("source_material")
+
 func _register_shape(shape: CSGShape3D, local_position: Vector3, local_rotation: Vector3 = Vector3.ZERO) -> void:
 	shape.set_meta("component_local", Transform3D(Basis.from_euler(local_rotation), local_position))
 
@@ -303,6 +345,8 @@ func apply_scale(value: float) -> void:
 		wall.set_component_active(self, active)
 	area.visible = active
 	area.collision_layer = 2 if active else 0
+	if direct_root != null:
+		direct_root.visible = direct_preview_mode and active
 	update_transform()
 
 func set_user_scale(value: float) -> void:
@@ -326,9 +370,10 @@ func update_transform() -> void:
 		selection_lines.visible = selection_lines.visible and active
 	if gizmo_root != null:
 		gizmo_root.global_transform = wall.surface_transform(anchor)
-	for shape in visuals + [cutter]:
-		if shape.get_parent() != null:
-			shape.global_transform = global_transform * shape.get_meta("component_local") as Transform3D
+	if not wall.preview_mode:
+		for shape in visuals + [cutter]:
+			if shape.get_parent() != null:
+				shape.global_transform = global_transform * shape.get_meta("component_local") as Transform3D
 	var signature := "%s|%.4f|%.4f|%.3f|%.3f|%.3f|%.2f|%.3f|%.3f|%.2f|%d" % [
 		definition.id, anchor.x, anchor.y, attachment_angle_degrees,
 		current_scale, transition_thickness, transition_curvature,
@@ -338,7 +383,7 @@ func update_transform() -> void:
 	if signature != transition_signature:
 		transition_mesh_cache = TransitionBuilder.build(self)
 		transition_signature = signature
-		if not defer_transition_csg and transition_shape != null:
+		if not defer_transition_csg and not wall.preview_mode and transition_shape != null:
 			transition_shape.mesh = transition_mesh_cache
 	if transition_render != null:
 		if transition_mesh_cache != null:
@@ -346,16 +391,27 @@ func update_transform() -> void:
 		else:
 			transition_render.mesh = null
 		transition_render.visible = transition_enabled and active
-	wall.mark_geometry_dirty()
+	if not wall.preview_mode:
+		wall.mark_geometry_dirty()
 
 func set_transition_deferred(value: bool) -> void:
 	defer_transition_csg = value
 
 func flush_transition_csg() -> void:
 	defer_transition_csg = false
+	if wall.preview_mode:
+		return
 	if transition_shape != null and transition_mesh_cache != null:
 		transition_shape.mesh = transition_mesh_cache
 		wall.flush_geometry()
+
+func apply_csg_state() -> void:
+	defer_transition_csg = false
+	for shape in visuals + [cutter]:
+		if shape.get_parent() != null:
+			shape.global_transform = global_transform * shape.get_meta("component_local") as Transform3D
+	if transition_shape != null and transition_mesh_cache != null:
+		transition_shape.mesh = transition_mesh_cache
 
 static func make_preview(component_definition: PCGComponentDefinition) -> Node3D:
 	var root := Node3D.new()
