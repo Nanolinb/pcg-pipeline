@@ -247,7 +247,7 @@ func _build_ui() -> void:
 	curvature_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	curvature_row.add_child(curvature_label)
 	transition_curvature_spin = SpinBox.new()
-	transition_curvature_spin.min_value = 0.0
+	transition_curvature_spin.min_value = -1.0
 	transition_curvature_spin.max_value = 1.0
 	transition_curvature_spin.step = 0.05
 	transition_curvature_spin.editable = false
@@ -883,6 +883,14 @@ func _run_smoke_test() -> void:
 	for vertex in transition_arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array:
 		max_transition_height = maxf(max_transition_height, vertex.z)
 	_smoke_check(max_transition_height > 0.2, "最大厚度与弧度必须形成有高度的圆弧截面", failures)
+	cylinder_round.transition_curvature = -1.0
+	cylinder_round.update_transform()
+	_smoke_check(_mesh_is_closed(cylinder_round.transition_shape.mesh), "负弧度过渡必须保持封闭", failures)
+	transition_arrays = cylinder_round.transition_shape.mesh.surface_get_arrays(0)
+	max_transition_height = -INF
+	for vertex in transition_arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array:
+		max_transition_height = maxf(max_transition_height, vertex.z)
+	_smoke_check(max_transition_height > 0.2, "弧度 -1 必须形成完整反向圆弧", failures)
 	await get_tree().process_frame
 	await get_tree().process_frame
 	cylinder_round.transition_thickness = -1.0

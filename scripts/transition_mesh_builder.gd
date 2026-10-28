@@ -24,7 +24,8 @@ static func build(component: Node3D) -> ArrayMesh:
 	var rings: Array = []
 	for step in range(profile_steps + 1):
 		var t := float(step) / float(profile_steps)
-		var height_t := lerpf(t, sin(t * PI * 0.5), component.transition_curvature)
+		var arc_profile := sin(t * PI * 0.5) if component.transition_curvature >= 0.0 else 1.0 - cos(t * PI * 0.5)
+		var height_t := lerpf(t, arc_profile, absf(component.transition_curvature))
 		var ring: Array[Vector3] = []
 		for i in segments:
 			var point := outer_top[i].lerp(inner_top[i], t)

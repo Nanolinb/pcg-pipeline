@@ -260,3 +260,17 @@
 
 ### 提交
 - `fix(components): render concave host transition correctly`
+
+## 2026-10-28 · Surface Component PCG v0.9.3
+
+### 负弧度
+- 过渡弧度范围由 0～1 扩展为 -1～1，资产和 Inspector 同步更新。
+- 0 保持直线斜面，正值使用凹圆弧，负值使用 `1 - cos(t·π/2)` 的反向圆弧。
+- -1 为完整反向曲线，不再被截断为 0。
+
+### 验证
+- 新增 -1 的封闭性与最大截面高度断言。
+- headless 与真实图形视口 smoke 通过。
+
+### 提交
+- `feat(components): support negative transition curvature`
