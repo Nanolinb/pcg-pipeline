@@ -1,0 +1,15 @@
+; BASE-05 共享载体 Spike 的最小第三方消费者。
+; 不含任何主程序代码/资源，仅通过 addons 链接加载 shared/addons/pcg_shared，
+; 运行与两个主程序完全相同的 spike_check.gd。
+
+config_version=5
+
+[application]
+
+config/name="PCG Shared Addon Spike Consumer"
+config/features=PackedStringArray("4.6", "GL Compatibility")
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

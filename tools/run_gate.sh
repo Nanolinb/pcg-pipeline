@@ -16,6 +16,7 @@ if [[ -z "$GODOT_BIN" ]]; then
 		exit 1
 	fi
 fi
+export GODOT_BIN
 
 failures=0
 
@@ -28,6 +29,23 @@ run_test() {
 	else
 		local code=$?
 		printf 'GATE_FAIL: %s (exit=%d)\n' "$name" "$code" >&2
+		failures=$((failures + 1))
+	fi
+}
+
+run_logged_test() {
+	local name="$1"
+	local marker="$2"
+	shift 2
+	printf '\nGATE_BEGIN: %s\n' "$name"
+	local output
+	local code=0
+	output="$("$@" 2>&1)" || code=$?
+	printf '%s\n' "$output"
+	if [[ "$code" -eq 0 ]] && grep -q "$marker" <<<"$output"; then
+		printf 'GATE_PASS: %s\n' "$name"
+	else
+		printf 'GATE_FAIL: %s (exit=%d, missing marker=%s)\n' "$name" "$code" "$marker" >&2
 		failures=$((failures + 1))
 	fi
 }
@@ -54,8 +72,9 @@ PY
 }
 
 run_test "project versions" run_versions
-run_test "Surface Component headless smoke" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s scripts/tests/run_smoke_test.gd
-run_test "PipeWeaver headless smoke" "$GODOT_BIN" --headless --path "$ROOT_DIR/PipeWeaver" res://tests/pipeweaver_smoke.tscn
+run_logged_test "Surface Component headless smoke" "PCG_SMOKE_TEST_PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s scripts/tests/run_smoke_test.gd
+run_logged_test "PipeWeaver headless smoke" "PIPE_SMOKE_PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR/PipeWeaver" res://tests/pipeweaver_smoke.tscn
+run_test "shared addon cold-import spike" "$ROOT_DIR/tools/run_shared_addon_spike.sh"
 
 if [[ "$failures" -ne 0 ]]; then
 	printf '\nGATE_FAIL: %d test group(s) failed\n' "$failures" >&2
