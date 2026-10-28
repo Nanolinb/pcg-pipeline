@@ -33,7 +33,7 @@ func append(source: Mesh, transform: Transform3D = Transform3D.IDENTITY, materia
 			)
 			var group := _group_for(coord, material)
 			for offset in 3:
-				_append_vertex(group, arrays, source_indices[corner + offset], transform, normal_basis)
+				_append_vertex(group, arrays, source_indices[corner + offset], transform, normal_basis, surface_index)
 
 func build() -> Array[Dictionary]:
 	var chunks: Array[Dictionary] = []
@@ -75,15 +75,16 @@ func _group_for(coord: Vector3i, material: Material) -> Dictionary:
 	_groups[key] = group
 	return group
 
-func _append_vertex(group: Dictionary, source: Array, old_index: int, transform: Transform3D, normal_basis: Basis) -> void:
+func _append_vertex(group: Dictionary, source: Array, old_index: int, transform: Transform3D, normal_basis: Basis, surface_index: int) -> void:
 	var lookup: Dictionary = group["lookup"]
 	var indices: PackedInt32Array = group["indices"]
-	if lookup.has(old_index):
-		indices.append(lookup[old_index])
+	var lookup_key := "%d:%d" % [surface_index, old_index]
+	if lookup.has(lookup_key):
+		indices.append(lookup[lookup_key])
 		group["indices"] = indices
 		return
 	var new_index: int = group["vertices"].size()
-	lookup[old_index] = new_index
+	lookup[lookup_key] = new_index
 	indices.append(new_index)
 	group["indices"] = indices
 	var vertices: PackedVector3Array = group["vertices"]
