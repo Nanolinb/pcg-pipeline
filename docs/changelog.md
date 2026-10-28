@@ -1,5 +1,27 @@
 # 修改记录
 
+## 2026-10-29 · Roadmap 自检与 v0.13 基线工作启动
+
+### 计划自检与修订
+- 新增并复核 `docs/roadmap.md`，补齐原子保存与崩溃恢复、组件版本固定引用、碰撞层/掩码、街区导航、无 EditorPlugin 运行时实例化和流送导航验收。
+- 明确 headless 不承担真实截图/输入验证；黄金网格基线绑定 Godot 确切版本与平台；内置 CSG 未验证线程安全替代前仅按主线程任务处理。
+- 新增 `docs/performance_baseline.md` 与 `reports/baseline/`，记录参考硬件、现有工作区、文件哈希、运行日志和既有 RID 警告；图形证据仍待本机会话补齐。
+
+### BASE-02 / BASE-03 / BASE-04
+- 根工程 smoke 测试主体解耦到 `scripts/tests/`，保留原 `--smoke-test` 和独立 `-s scripts/tests/run_smoke_test.gd` 入口。
+- PipeWeaver 新增独立真实生成 smoke，覆盖同主体/跨主体路径、管体与接头、内存记录重编辑、Chunk 合批和多 Surface 顶点属性。
+- PipeWeaver `project.godot` 增加集成基线版本 `0.12.0`。
+- 新增 `tools/run_gate.sh`，统一检查双工程版本与 headless 回归；图形测试不进入无显示环境门禁。
+
+### 缺陷修复
+- PipeWeaver Chunk 合批改为 `surface_index + old_index` 去重，避免同材质多 Surface 复用错误顶点；新增不同 Surface 相同旧索引的位置保持断言。
+
+### 验证
+- 根工程独立入口与原入口均输出 `PCG_SMOKE_TEST_PASS`，失败注入返回非零退出码。
+- PipeWeaver 实际生成与回归输出 `PIPE_SMOKE_PASS checks=56`，包含 625 顶点、4 接头、6912 索引守恒及多 Surface 顶点位置检查。
+- `tools/run_gate.sh` 全部 headless 检查通过；根工程仍有既有 Dummy Renderer 退出清理警告。
+- v0.13 尚未完成：共享内核 Spike、干净重导入验证、BASE-06 契约评审及本机图形证据仍待执行。
+
 ## 2026-10-28 · Surface Component PCG v0.12.0
 
 ### 编辑器插件与场景工作流

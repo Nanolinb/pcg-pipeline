@@ -1,0 +1,116 @@
+
+GATE_BEGIN: project versions
+GATE_VERSION: /Users/shaunlin/Kimi Space/PCG管道/project.godot = 0.12.0
+GATE_VERSION: /Users/shaunlin/Kimi Space/PCG管道/PipeWeaver/project.godot = 0.12.0
+GATE_PASS: project versions
+
+GATE_BEGIN: Surface Component headless smoke
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+PCG_SMOKE_TEST_PASS: dual hosts, smoothed CSG render, visible wireframe material, snapping, handles, isolated shrink
+ERROR: Pages in use exist at exit in PagedAllocator: N20RasterizerSceneDummy21GeometryInstanceDummyE
+   at: ~PagedAllocator (./core/templates/paged_allocator.h:169)
+ERROR: 7 RID allocations of type 'N13RendererDummy9DummyMeshE' were leaked at exit.
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+ERROR: 3 RID allocations of type 'N13RendererDummy15MaterialStorage13DummyMaterialE' were leaked at exit.
+ERROR: 2 RID allocations of type 'N13RendererDummy15MaterialStorage11DummyShaderE' were leaked at exit.
+ERROR: 7 RID allocations of type 'N17RendererSceneCull8InstanceE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+     at: cleanup (core/object/object.cpp:2641)
+ERROR: 1 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+ERROR: Pages in use exist at exit in PagedAllocator: N7Variant5Pools12BucketMediumE
+   at: ~PagedAllocator (./core/templates/paged_allocator.h:169)
+GATE_PASS: Surface Component headless smoke
+
+GATE_BEGIN: PipeWeaver headless smoke
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+PIPE_SMOKE_BEGIN
+PIPE_PCG_GENERATED length=3.775 vertices=625 connectors=4 segments=3
+PIPE_PCG_READY
+[1] 启动示例管道（G1_Pipe 基线）
+  ok - 示例管道在 headless 下实际生成
+  ok - 基线长度 3.775（实测 3.775）
+  ok - 基线顶点数 625（实测 625）
+  ok - 管体 ContinuousPipe 网格存在
+  ok - 管体索引为完整三角形
+  ok - 管体法线与顶点一一对应
+  ok - 管体 UV 与顶点一一对应
+  ok - 管体附带 4 个接头网格实例
+  ok - 记录 4 个接头位置（2 端部 + 2 变径法兰）
+  ok - 管体带拾取碰撞体
+[2] 表面路径求解（同主体 + 跨主体）
+  ok - 同主体表面寻路返回路径点
+  ok - SideBlock 主体存在
+  ok - 跨主体最短贴合路径返回路径点
+  ok - 跨主体路径标注硬转角
+[3] 管体/接头构建器直测
+  ok - 单段直管生成成功
+  ok - 单段直管网格存在
+  ok - 直管顶点数符合环向分段（实测 39）
+  ok - 单段管两个端部接头
+  ok - 直管长度接近路径长度（实测 2.000）
+  ok - 两段变径产生 3 个接头
+  ok - 接头网格可构建且非空
+[4] 同材质多 Surface 合批
+  ok - 同材质同区域 Surface 合并为一个 Chunk
+  ok - 不同 Surface 的相同旧索引不复用顶点（实测 6）
+  ok - 第二 Surface 顶点位置未串用第一 Surface
+[5] 内存 pipe_records 重编辑与 Chunk 合批
+PIPE_FINALIZED Pipe_001 children=6
+  ok - 管 1 完成并写入 pipe_records
+  ok - 管 2 路径求解成功
+PIPE_STARTED Pipe_002
+PIPE_PCG_GENERATED length=6.383 vertices=625 connectors=2 segments=1
+  ok - 管 2 已生成（顶点 625）
+PIPE_FINALIZED Pipe_002 children=4
+  ok - 管 2 完成并写入 pipe_records
+PIPE_PCG_GENERATED length=3.775 vertices=625 connectors=4 segments=3
+  ok - 重编辑后当前管道切回管 1
+  ok - 重编辑复用原 pipe root
+  ok - 控制点从内存记录恢复
+  ok - 重编辑后重新生成基线网格（顶点 625）
+PIPE_FINALIZED Pipe_001 children=6
+PIPE_BAKED id=1 chunks=4 materials=12
+  ok - 管 1 标记为已合批
+  ok - 合批后 PCG 记录仍保留（可恢复编辑）
+  ok - 合批根节点命名为 Pipe_001_Fixed
+  ok - Chunk 数量 >= 1（实测 4）
+  ok - Chunk PipeChunk_-1_0_0 网格有效
+  ok - Chunk PipeChunk_-1_0_0 顶点非空
+  ok - Chunk PipeChunk_-1_0_0 索引为完整三角形
+  ok - Chunk PipeChunk_0_0_0 网格有效
+  ok - Chunk PipeChunk_0_0_0 顶点非空
+  ok - Chunk PipeChunk_0_0_0 索引为完整三角形
+  ok - Chunk @MeshInstance3D@447 网格有效
+  ok - Chunk @MeshInstance3D@447 顶点非空
+  ok - Chunk @MeshInstance3D@447 索引为完整三角形
+  ok - Chunk @MeshInstance3D@450 网格有效
+  ok - Chunk @MeshInstance3D@450 顶点非空
+  ok - Chunk @MeshInstance3D@450 索引为完整三角形
+  ok - Chunk 网格节点数与 meta 一致（4 == 4）
+  ok - 合批三角形索引守恒（源 6912 -> 合批 6912）
+  ok - 合批管体顶点含源网格（662 >= 625，差额为 chunk 边界复制）
+  ok - 合批根保留拾取碰撞体
+PIPE_PCG_GENERATED length=6.383 vertices=625 connectors=2 segments=1
+  ok - 合批后重编辑切回管 2
+  ok - 重编辑清除管 2 baked 标记
+  ok - 管 2 从记录恢复并重新生成（顶点 625）
+  ok - 管 2 root 下重新生成 ContinuousPipe
+PIPE_SMOKE_PASS checks=56
+GATE_PASS: PipeWeaver headless smoke
+
+GATE_PASS: all headless checks passed
+GATE_NOTE: graphical input, screenshots and performance require the documented local graphical run

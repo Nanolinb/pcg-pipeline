@@ -42,10 +42,12 @@
 ## 版本规划
 - 使用语义化版本 `主版本.次版本.修订号`。
 - 新功能且向后兼容时提升次版本；缺陷修复提升修订号；不兼容变更提升主版本。
+- 长期建筑群编辑系统按 `docs/roadmap.md` 的集成里程碑执行；`0.x` 阶段的数据格式不兼容以格式版本、迁移器和旧样本回归管理，`v1.0.0` 后恢复常规主版本规则。
 - 每次需求或缺陷修改同步更新本文件与 `docs/changelog.md`。
 - 每次修改单独提交，提交信息采用 `type(scope): summary`，不得在提交中混入无关工程文件。
 
 ## PipeWeaver 当前需求基线
+- 当前集成基线为 v0.12.0，版本写入 `PipeWeaver/project.godot`。
 - 在同一立体表面通过起止点或 Paint 创建管道。
 - 起止点允许位于两个不同主体，完整比较候选连接，以两侧表面路径与跨接距离之和最短为准。
 - 双主体路径逐点记录所属碰撞体，平滑投射、拖动和角度设置使用对应主体。
@@ -72,4 +74,8 @@
 ## 工作方式约束
 - 新需求不得为每次验证另开 Godot 窗口；只重用一个 PipeWeaver 实例。
 - 版本对比通过 Git 提交，不通过多窗口并存。
+- 双工程 headless 门禁统一运行 `tools/run_gate.sh`；也可用 `GODOT_BIN` 指定 Godot 可执行文件。
+- 根工程独立 smoke 为 `godot --headless --path . -s scripts/tests/run_smoke_test.gd`，原 `-- --smoke-test` 入口保持兼容。
+- PipeWeaver 独立 smoke 为 `godot --headless --path PipeWeaver res://tests/pipeweaver_smoke.tscn`，必须覆盖真实生成、路径、内存重编辑与多 Surface 合批。
+- 图形输入、截图和性能按 `docs/performance_baseline.md` 在本机图形会话验证，不以 headless Dummy Renderer 代替。
 - 每次需求变更同步更新 `docs/requirements.md` 与 `docs/changelog.md`。
