@@ -274,3 +274,20 @@
 
 ### 提交
 - `feat(components): support negative transition curvature`
+
+## 2026-10-28 · Surface Component PCG v0.9.4
+
+### 过渡性能优化
+- 按资产 ID、锚点、法线倾角、当前缩放、厚度、弧度与根部参数生成缓存签名，未变化时复用过渡 Mesh。
+- 组件移动和手柄拖动期间只更新直接预览，凹形 CSG 延迟到交互结束提交。
+- 最终 CSG 与 smooth/Chunk 渲染刷新增加 0.1s 节流，避免每个鼠标事件全量重建。
+- 松开后立即调用 flush，最终水密结果不依赖节流时间。
+- 新增缓存复用、拖动延迟和结束提交断言。
+
+### 验证
+- headless 与真实图形视口 smoke 通过。
+- 固定场景静止约 50 FPS；连续拖动由优化前约 17 FPS 提升至约 39 FPS。
+- 实体过渡外观与最终 CSG 提交保持正确。
+
+### 提交
+- `perf(components): cache and throttle transition rebuilds`

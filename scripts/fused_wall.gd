@@ -33,6 +33,8 @@ var solid_mesh: ArrayMesh
 var wireframe_material: ShaderMaterial
 var wireframe_enabled: bool = false
 var render_dirty: bool = true
+var render_cooldown: float = 0.0
+var render_refresh_interval: float = 0.1
 var components: Array = []
 
 func _ready() -> void:
@@ -82,9 +84,17 @@ func _build_render_mesh() -> void:
 func mark_geometry_dirty() -> void:
 	render_dirty = true
 
-func _process(_delta: float) -> void:
-	if render_dirty:
+func flush_geometry() -> void:
+	render_dirty = true
+	render_cooldown = 0.0
+
+func _process(delta: float) -> void:
+	if not render_dirty:
+		return
+	render_cooldown = maxf(render_cooldown - delta, 0.0)
+	if render_cooldown <= 0.0:
 		render_dirty = false
+		render_cooldown = render_refresh_interval
 		call_deferred("_refresh_render_mesh")
 
 func _refresh_render_mesh() -> void:

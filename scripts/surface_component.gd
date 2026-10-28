@@ -15,6 +15,9 @@ var transition_curvature: float = 0.65
 var transition_shape: CSGMesh3D
 var transition_render: MeshInstance3D
 var transition_wireframe_enabled: bool = false
+var transition_mesh_cache: ArrayMesh
+var transition_signature: String = ""
+var defer_transition_csg: bool = false
 var user_scale: float = 1.0
 var neighborhood_scale: float = 1.0
 var current_scale: float = 1.0
@@ -236,6 +239,7 @@ func set_transition_wireframe(value: bool) -> void:
 		update_transform()
 
 func _rebuild_transition_shape() -> void:
+	transition_signature = ""
 	if transition_shape != null:
 		visuals.erase(transition_shape)
 		if transition_shape.get_parent() != null:
@@ -295,15 +299,32 @@ func update_transform() -> void:
 	for shape in visuals + [cutter]:
 		if shape.get_parent() != null:
 			shape.global_transform = global_transform * shape.get_meta("component_local") as Transform3D
-	if transition_shape != null:
-		transition_shape.mesh = TransitionBuilder.build(self)
+	var signature := "%s|%.4f|%.4f|%.3f|%.3f|%.3f|%.2f|%.3f|%.3f" % [
+		definition.id, anchor.x, anchor.y, attachment_angle_degrees,
+		current_scale, transition_thickness, transition_curvature,
+		definition.root_embed, definition.root_flare
+	]
+	if signature != transition_signature:
+		transition_mesh_cache = TransitionBuilder.build(self)
+		transition_signature = signature
+		if not defer_transition_csg and transition_shape != null:
+			transition_shape.mesh = transition_mesh_cache
 	if transition_render != null:
-		if transition_shape != null:
-			transition_render.mesh = SmoothMeshBuilder.build_wireframe(transition_shape.mesh) if transition_wireframe_enabled else transition_shape.mesh
+		if transition_mesh_cache != null:
+			transition_render.mesh = SmoothMeshBuilder.build_wireframe(transition_mesh_cache) if transition_wireframe_enabled else transition_mesh_cache
 		else:
 			transition_render.mesh = null
 		transition_render.visible = transition_enabled and active
 	wall.mark_geometry_dirty()
+
+func set_transition_deferred(value: bool) -> void:
+	defer_transition_csg = value
+
+func flush_transition_csg() -> void:
+	defer_transition_csg = false
+	if transition_shape != null and transition_mesh_cache != null:
+		transition_shape.mesh = transition_mesh_cache
+		wall.flush_geometry()
 
 static func make_preview(component_definition: PCGComponentDefinition) -> Node3D:
 	var root := Node3D.new()

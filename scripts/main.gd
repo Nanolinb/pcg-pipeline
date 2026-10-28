@@ -322,6 +322,7 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 			handle_drag = ""
+			selected.flush_transition_csg()
 			status_label.text = "组件变换已更新。"
 			get_viewport().set_input_as_handled()
 		return
@@ -331,6 +332,7 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 			dragging_component = false
+			selected.flush_transition_csg()
 			status_label.text = "组件位置已更新；邻域尺寸已重新求解。"
 			get_viewport().set_input_as_handled()
 
@@ -478,12 +480,14 @@ func _select_or_drag(screen_position: Vector2) -> void:
 		handle_start_mouse = screen_position
 		handle_start_angle = selected.attachment_angle_degrees
 		handle_start_scale = selected.user_scale
+		selected.set_transition_deferred(true)
 		dragging_component = false
 		status_label.text = "拖动角度手柄：上下调整法线倾角" if handle == "angle" else "拖动缩放手柄：左右调整整体尺寸"
 		return
 	var component := _pick_component(screen_position)
 	_select_component(component)
 	if component != null:
+		component.set_transition_deferred(true)
 		dragging_component = true
 		status_label.text = "正在拖动「%s」· 表面吸附保持开启" % component.definition.display_name
 
@@ -709,6 +713,15 @@ func _run_visual_check() -> void:
 	camera_distance = 6.5
 	_update_camera()
 	status_label.text = "视觉验收：厚度 1.0m，弧度 1.0；按 G 检查过渡截面。"
+	await get_tree().create_timer(2.0).timeout
+	print("PCG_VISUAL_FPS ", Engine.get_frames_per_second())
+	component.set_transition_deferred(true)
+	for i in 20:
+		component.anchor.x = sin(float(i) * 0.2) * 0.2
+		component.update_transform()
+		await get_tree().process_frame
+	print("PCG_DRAG_FPS ", Engine.get_frames_per_second())
+	component.flush_transition_csg()
 
 func _run_smoke_test() -> void:
 	await get_tree().process_frame
@@ -874,6 +887,15 @@ func _run_smoke_test() -> void:
 	_smoke_check(cylinder_round.transition_shape == null, "关闭过渡应移除对应 CSG", failures)
 	cylinder_round.set_transition_enabled(true)
 	_smoke_check(cylinder_round.transition_shape != null and cylinder_round.transition_shape.get_parent() == cylinder_host.combiner, "重新开启应恢复过渡 CSG", failures)
+	var cached_transition_mesh := cylinder_round.transition_mesh_cache
+	cylinder_round.update_transform()
+	_smoke_check(cylinder_round.transition_mesh_cache == cached_transition_mesh, "参数未变化时必须复用过渡 Mesh", failures)
+	cylinder_round.set_transition_deferred(true)
+	cylinder_round.transition_thickness = 0.8
+	cylinder_round.update_transform()
+	_smoke_check(cylinder_round.transition_shape.mesh == cached_transition_mesh and cylinder_round.transition_render.mesh != cached_transition_mesh, "拖动中应只更新直接预览并延迟凹形 CSG", failures)
+	cylinder_round.flush_transition_csg()
+	_smoke_check(cylinder_round.transition_shape.mesh == cylinder_round.transition_mesh_cache, "交互结束必须提交最新过渡 CSG", failures)
 	cylinder_round.transition_thickness = 1.0
 	cylinder_round.transition_curvature = 1.0
 	cylinder_round.update_transform()
