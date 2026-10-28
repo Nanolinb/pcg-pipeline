@@ -708,7 +708,7 @@ func _run_smoke_test() -> void:
 	_finish_library_drag()
 	_smoke_check(components.size() == 2, "第二次库拖放应创建方窗", failures)
 	var square_window := components[1]
-	var drag_target := square_window.anchor + Vector2(0.0, 1.15)
+	var drag_target := square_window.anchor + Vector2(0.0, 1.35)
 	if DisplayServer.get_name() == "headless":
 		_move_component(round_window, drag_target)
 	else:
@@ -771,6 +771,18 @@ func _run_smoke_test() -> void:
 	var ring_arrays: Array = round_window.visuals[0].mesh.surface_get_arrays(0)
 	var ring_uvs: PackedVector2Array = ring_arrays[Mesh.ARRAY_TEX_UV] if ring_arrays[Mesh.ARRAY_TEX_UV] != null else PackedVector2Array()
 	_smoke_check(ring_uvs.size() == ring_arrays[Mesh.ARRAY_VERTEX].size(), "程序圆环应包含完整世界尺度 UV", failures)
+	var root_radius := 0.0
+	var front_radius := 0.0
+	var half_frame_depth: float = (cylinder_round.definition.depth + cylinder_round.definition.root_embed) * 0.5
+	for vertex in ring_arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array:
+		if is_equal_approx(vertex.z, -half_frame_depth):
+			root_radius = maxf(root_radius, Vector2(vertex.x, vertex.y).length())
+		if is_equal_approx(vertex.z, half_frame_depth):
+			front_radius = maxf(front_radius, Vector2(vertex.x, vertex.y).length())
+	var frame_center_z: float = cylinder_round.visuals[0].get_meta("component_local").origin.z
+	_smoke_check(is_equal_approx(frame_center_z - half_frame_depth, -cylinder_round.definition.root_embed), "root_embed 正值必须把根面放在局部负 Z", failures)
+	_smoke_check(is_equal_approx(frame_center_z + half_frame_depth, cylinder_round.definition.depth), "窗户外沿必须位于局部正 Z 的 depth", failures)
+	_smoke_check(root_radius > front_radius * 1.05, "梯形圆台根面必须大于外沿", failures)
 	_select_component(cylinder_round)
 	var shared_frame := cylinder_round.visuals[0].material as ShaderMaterial
 	var original_frame_mesh: Mesh = cylinder_round.visuals[0].mesh

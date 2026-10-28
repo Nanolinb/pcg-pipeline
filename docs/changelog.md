@@ -209,3 +209,21 @@
 
 ### 提交
 - `feat(components): add shared materials and host transitions`
+
+## 2026-10-28 · Surface Component PCG v0.9.0
+
+### 梯形圆台与根部方向
+- 圆窗由直筒改为根部大、外沿小的封闭梯形圆台，默认 `root_flare = 0.18`。
+- 根面固定在局部 `z = -root_embed`，外沿固定在局部 `z = +depth`，以几何符号消除正反歧义。
+- 圆台侧壁根据锥度重建法线，保留内外壁、前后端面与世界尺度 UV。
+- 邻域 footprint 使用根部真实最大外径，避免大根面参与交接却仍按外沿计算空间。
+- 过渡内圈同步连接大根面，预览与实体使用相同锥度。
+
+### 验证
+- 直接读取网格顶点，断言根面负 Z、外沿正 Z、根面半径大于外沿。
+- 根据增大后的 footprint 调整邻窗缩小测试距离，原缩小/消失/恢复断言不放宽。
+- headless 与真实图形视口 smoke 通过。
+- 实际拖放并检查实体与水密线框中的前后大小环轮廓。
+
+### 提交
+- `feat(components): clarify window root with tapered frame`

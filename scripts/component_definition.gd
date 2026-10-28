@@ -13,6 +13,7 @@ enum Shape {
 @export var size: Vector2 = Vector2.ONE
 @export var depth: float = 0.32
 @export_range(0.02, 0.5, 0.01) var root_embed: float = 0.12
+@export_range(0.0, 0.5, 0.01) var root_flare: float = 0.18
 @export var transition_enabled: bool = true
 @export_range(-1.0, 1.0, 0.01) var transition_thickness: float = -1.0
 @export_range(0.0, 1.0, 0.05) var transition_curvature: float = 0.65
@@ -32,7 +33,7 @@ enum Shape {
 
 func footprint_radius() -> float:
 	if shape == Shape.ROUND_WINDOW:
-		return maxf(size.x, size.y) * 0.5
+		return maxf(size.x, size.y) * 0.5 * (1.0 + root_flare)
 	return size.length() * 0.5
 
 func opening_size() -> Vector2:

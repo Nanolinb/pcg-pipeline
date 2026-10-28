@@ -6,7 +6,8 @@ static func build(component: Node3D) -> ArrayMesh:
 	var thickness: float = component.effective_transition_thickness()
 	var segments := 48
 	var profile_steps := 12
-	var inner_half := definition.size * 0.5 - Vector2.ONE * definition.frame_width * 0.25
+	var root_scale := 1.0 + definition.root_flare if definition.shape == PCGComponentDefinition.Shape.ROUND_WINDOW else 1.0
+	var inner_half := (definition.size * 0.5 - Vector2.ONE * definition.frame_width * 0.25) * root_scale
 	var outer_half := inner_half + Vector2.ONE * thickness
 	var inner_top: Array[Vector3] = []
 	var outer_top: Array[Vector3] = []

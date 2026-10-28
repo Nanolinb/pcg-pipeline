@@ -164,7 +164,7 @@ func _build_csg() -> void:
 		frame.name = "RoundFrame"
 		frame.operation = CSGShape3D.OPERATION_UNION
 		frame.mesh = definition.custom_frame_mesh if definition.custom_frame_mesh != null else ManifoldBuilder.ring(
-			definition.size.x * 0.5, opening.x * 0.5, frame_depth, 48, definition.texture_world_size
+			definition.size.x * 0.5, opening.x * 0.5, frame_depth, 48, definition.texture_world_size, definition.root_flare
 		)
 		frame.material = _solid_material(definition.frame_material_id, definition.frame_profile, definition.frame_color, 0.32, 0.0, definition.texture_world_size)
 		visuals.append(frame)
@@ -294,7 +294,7 @@ static func make_preview(component_definition: PCGComponentDefinition) -> Node3D
 	var frame_z := (component_definition.depth - component_definition.root_embed) * 0.5
 	if component_definition.shape == PCGComponentDefinition.Shape.ROUND_WINDOW:
 		_add_preview_mesh(root, component_definition.custom_frame_mesh if component_definition.custom_frame_mesh != null else ManifoldBuilder.ring(
-			component_definition.size.x * 0.5, opening.x * 0.5, frame_depth, 48, component_definition.texture_world_size
+			component_definition.size.x * 0.5, opening.x * 0.5, frame_depth, 48, component_definition.texture_world_size, component_definition.root_flare
 		), frame_material, Vector3(0.0, 0.0, frame_z))
 		var glass := CylinderMesh.new()
 		glass.top_radius = opening.x * 0.5
