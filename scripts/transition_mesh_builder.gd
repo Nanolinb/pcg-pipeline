@@ -16,7 +16,7 @@ static func build(component: Node3D) -> ArrayMesh:
 		var angle := TAU * float(i) / float(segments)
 		var inner := _outline_point(angle, inner_half, definition.shape)
 		var outer := _outline_point(angle, outer_half, definition.shape)
-		inner_top.append(Vector3(inner.x, inner.y, -definition.root_embed))
+		inner_top.append(Vector3(inner.x, inner.y, maxf(definition.root_embed * 0.35, 0.04)))
 		var host := _host_point(component, outer)
 		outer_top.append(host["point"])
 		outer_bottom.append(host["point"] - host["normal"] * 0.12)

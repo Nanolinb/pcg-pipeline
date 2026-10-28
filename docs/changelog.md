@@ -227,3 +227,18 @@
 
 ### 提交
 - `feat(components): clarify window root with tapered frame`
+
+## 2026-10-28 · Surface Component PCG v0.9.1
+
+### 修复过渡不可见
+- 修正过渡内圈位于 `z = -root_embed` 导致 loft 埋入墙体和窗框的问题。
+- 内圈改到主体正 Z 外侧并接入圆台侧壁，外圈仍贴合主体，底部继续嵌入保证封闭并集。
+- 厚度与弧度现在作用于实际外露结构，不再只改变被遮挡的内部几何。
+- 新增正 Z 外露断言，防止仅以 Mesh 存在和封闭性误判视觉正确。
+
+### 验证
+- headless 与真实图形视口 smoke 通过。
+- 重启图形窗口并实际放置圆窗，重新生成外露过渡。
+
+### 提交
+- `fix(components): expose host transition above surface`

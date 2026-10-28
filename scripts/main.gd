@@ -843,6 +843,12 @@ func _run_smoke_test() -> void:
 	_smoke_check(cylinder_host.base_shapes.size() == 2 and cylinder_host.outline_parts.size() == 2, "组合主体应包含圆柱、半球实体与轮廓", failures)
 	_smoke_check(cylinder_round.transition_shape != null and cylinder_round.effective_transition_thickness() > 0.0, "曲面组件应生成自适应包裹过渡", failures)
 	_smoke_check(_mesh_is_closed(cylinder_round.transition_shape.mesh), "包裹过渡应为封闭水密 Mesh", failures)
+	var transition_arrays := cylinder_round.transition_shape.mesh.surface_get_arrays(0)
+	var has_outward_transition := false
+	for vertex in transition_arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array:
+		if vertex.z > 0.01:
+			has_outward_transition = true
+	_smoke_check(has_outward_transition, "包裹过渡必须露出主体正 Z 外侧，不能全部埋入根部", failures)
 	cylinder_round.set_transition_enabled(false)
 	_smoke_check(cylinder_round.transition_shape == null, "关闭过渡应移除对应 CSG", failures)
 	cylinder_round.set_transition_enabled(true)
