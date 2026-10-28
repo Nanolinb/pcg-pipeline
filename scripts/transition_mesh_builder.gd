@@ -1,11 +1,14 @@
 class_name PCGTransitionMeshBuilder
 extends RefCounted
 
+const OutlineGeometry = preload("res://scripts/outline_geometry.gd")
+
 static func build(component: Node3D) -> ArrayMesh:
 	var definition: PCGComponentDefinition = component.definition
 	var thickness: float = component.effective_transition_thickness()
-	var segments := 48
-	var profile_steps := 12
+	var density: float = component.effective_transition_density()
+	var segments := clampi(roundi(48.0 * density), 12, 96)
+	var profile_steps := clampi(roundi(12.0 * density), 4, 24)
 	var root_scale := 1.0 + definition.root_flare if definition.shape == PCGComponentDefinition.Shape.ROUND_WINDOW else 1.0
 	var inner_half := (definition.size * 0.5 - Vector2.ONE * definition.frame_width * 0.25) * root_scale
 	var outer_half := inner_half + Vector2.ONE * thickness
@@ -13,10 +16,11 @@ static func build(component: Node3D) -> ArrayMesh:
 	var inner_top: Array[Vector3] = []
 	var outer_top: Array[Vector3] = []
 	var outer_bottom: Array[Vector3] = []
+	var inner_outline := _outline_points(inner_half, definition.shape, segments)
+	var outer_outline := _outline_points(outer_half, definition.shape, segments)
 	for i in segments:
-		var angle := TAU * float(i) / float(segments)
-		var inner := _outline_point(angle, inner_half, definition.shape)
-		var outer := _outline_point(angle, outer_half, definition.shape)
+		var inner := inner_outline[i]
+		var outer := outer_outline[i]
 		inner_top.append(Vector3(inner.x, inner.y, transition_height))
 		var host := _host_point(component, outer)
 		outer_top.append(host["point"])
@@ -54,6 +58,11 @@ static func build(component: Node3D) -> ArrayMesh:
 	for i in segments:
 		var next := (i + 1) % segments
 		_add_quad(indices, last_ring * segments + i, last_ring * segments + next, i, next, true)
+	if definition.shape == PCGComponentDefinition.Shape.ARCH_WINDOW:
+		for i in range(0, indices.size(), 3):
+			var swap := indices[i + 1]
+			indices[i + 1] = indices[i + 2]
+			indices[i + 2] = swap
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for index in indices:
@@ -61,6 +70,14 @@ static func build(component: Node3D) -> ArrayMesh:
 	surface.index()
 	surface.generate_normals()
 	return surface.commit()
+
+static func _outline_points(half_size: Vector2, shape: PCGComponentDefinition.Shape, segments: int) -> Array[Vector2]:
+	if shape == PCGComponentDefinition.Shape.ARCH_WINDOW:
+		return OutlineGeometry.resample_closed(OutlineGeometry.arch(half_size * 2.0), segments)
+	var points: Array[Vector2] = []
+	for i in segments:
+		points.append(_outline_point(TAU * float(i) / float(segments), half_size, shape))
+	return points
 
 static func _outline_point(angle: float, half_size: Vector2, shape: PCGComponentDefinition.Shape) -> Vector2:
 	var direction := Vector2(cos(angle), sin(angle))

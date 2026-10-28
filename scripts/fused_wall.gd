@@ -16,6 +16,7 @@ var cylinder_radius: float = 1.35
 var cylinder_height: float = 3.8
 var cylinder_depth: float = 0.7
 var body_color := Color("3d777b")
+var transition_density: float = 1.0
 var thickness: float:
 	get:
 		return wall_size.z if surface_kind == SurfaceKind.PLANE else cylinder_depth

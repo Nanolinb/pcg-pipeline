@@ -43,6 +43,8 @@ var attachment_angle_spin: SpinBox
 var transition_toggle: CheckButton
 var transition_thickness_spin: SpinBox
 var transition_curvature_spin: SpinBox
+var transition_density_option: OptionButton
+var transition_lod_option: OptionButton
 var wireframe_button: Button
 var frame_slot_panel: PCGTextureSlotPanel
 var glass_slot_panel: PCGTextureSlotPanel
@@ -163,7 +165,7 @@ func _build_ui() -> void:
 		var card := Button.new()
 		card.text = "%s\n%s  %.2f × %.2f m\n消失阈值  %d%%" % [
 			definition.display_name,
-			"圆形" if definition.shape == ComponentDefinition.Shape.ROUND_WINDOW else "方形",
+			["圆形", "方形", "拱形"][definition.shape],
 			definition.size.x, definition.size.y, roundi(definition.min_scale * 100.0)
 		]
 		card.custom_minimum_size = Vector2(0.0, 92.0)
@@ -253,6 +255,24 @@ func _build_ui() -> void:
 	transition_curvature_spin.editable = false
 	transition_curvature_spin.value_changed.connect(_on_transition_curvature_changed)
 	curvature_row.add_child(transition_curvature_spin)
+	var density_row := HBoxContainer.new()
+	inspector.add_child(density_row)
+	var density_label := Label.new()
+	density_label.text = "精度 / LOD"
+	density_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	density_row.add_child(density_label)
+	transition_density_option = OptionButton.new()
+	for text in ["25%", "50%", "100%", "200%"]:
+		transition_density_option.add_item(text)
+	transition_density_option.disabled = true
+	transition_density_option.item_selected.connect(_on_transition_density_selected)
+	density_row.add_child(transition_density_option)
+	transition_lod_option = OptionButton.new()
+	for text in ["LOD 0", "LOD 1", "LOD 2"]:
+		transition_lod_option.add_item(text)
+	transition_lod_option.disabled = true
+	transition_lod_option.item_selected.connect(_on_transition_lod_selected)
+	density_row.add_child(transition_lod_option)
 	_add_hint(inspector, "外圈贴合主体，内圈接入窗根。\n厚度默认按主体曲率自适应。")
 	_add_heading(inspector, "共享材质 · 框架")
 	frame_slot_panel = _create_slot_panel(inspector, _on_frame_texture_changed)
@@ -566,6 +586,8 @@ func _update_inspector() -> void:
 		transition_toggle.disabled = true
 		transition_thickness_spin.editable = false
 		transition_curvature_spin.editable = false
+		transition_density_option.disabled = true
+		transition_lod_option.disabled = true
 		frame_slot_panel.visible = false
 		glass_slot_panel.visible = false
 		return
@@ -583,6 +605,10 @@ func _update_inspector() -> void:
 	transition_thickness_spin.set_value_no_signal(selected.effective_transition_thickness())
 	transition_curvature_spin.editable = selected.transition_enabled
 	transition_curvature_spin.set_value_no_signal(selected.transition_curvature)
+	transition_density_option.disabled = not selected.transition_enabled
+	transition_density_option.select(clampi(roundi(selected.transition_density / 0.25) - 1, 0, 3))
+	transition_lod_option.disabled = not selected.transition_enabled
+	transition_lod_option.select(selected.transition_lod)
 	frame_slot_panel.visible = true
 	glass_slot_panel.visible = true
 	frame_slot_panel.set_profile(selected.definition.frame_profile)
@@ -631,6 +657,20 @@ func _on_transition_curvature_changed(value: float) -> void:
 	selected.transition_curvature = value
 	selected.update_transform()
 	status_label.text = "过渡弧度已更新。"
+
+func _on_transition_density_selected(index: int) -> void:
+	if selected == null:
+		return
+	selected.transition_density = [0.25, 0.5, 1.0, 2.0][index]
+	selected.update_transform()
+	status_label.text = "过渡精度已更新。"
+
+func _on_transition_lod_selected(index: int) -> void:
+	if selected == null:
+		return
+	selected.transition_lod = index
+	selected.update_transform()
+	status_label.text = "过渡 LOD 已切换为 LOD %d。" % index
 
 func _delete_selected() -> void:
 	if selected == null:
@@ -700,9 +740,9 @@ func _screen_for_anchor(anchor: Vector2) -> Vector2:
 
 func _run_visual_check() -> void:
 	await get_tree().physics_frame
-	var component := _place_component(&"round_window", Vector2(0.0, 0.4), wall)
-	component.transition_thickness = 1.0
-	component.transition_curvature = 1.0
+	var component := _place_component(&"arch_window", Vector2(0.0, 0.4), wall)
+	component.transition_thickness = 0.35
+	component.transition_curvature = 0.65
 	component.update_transform()
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -712,7 +752,7 @@ func _run_visual_check() -> void:
 	camera_pitch = 0.18
 	camera_distance = 6.5
 	_update_camera()
-	status_label.text = "视觉验收：厚度 1.0m，弧度 1.0；按 G 检查过渡截面。"
+	status_label.text = "拱形窗验收：下部 2/3 矩形，上部 1/3 椭圆弧；按 G 检查过渡。"
 	await get_tree().create_timer(2.0).timeout
 	print("PCG_VISUAL_FPS ", Engine.get_frames_per_second())
 	component.set_transition_deferred(true)
@@ -727,7 +767,7 @@ func _run_smoke_test() -> void:
 	await get_tree().process_frame
 	await get_tree().physics_frame
 	var failures := PackedStringArray()
-	_smoke_check(catalog.definitions.size() == 2, "应加载两份组件资产", failures)
+	_smoke_check(catalog.definitions.size() == 3, "应加载圆形、方形与拱形三份组件资产", failures)
 	_begin_library_drag(&"round_window")
 	_update_library_drag(_screen_for_anchor(Vector2(0.0, 0.8)))
 	_smoke_check(ghost_valid, "库预览应命中主体", failures)
@@ -913,6 +953,25 @@ func _run_smoke_test() -> void:
 	for vertex in transition_arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array:
 		max_transition_height = maxf(max_transition_height, vertex.z)
 	_smoke_check(max_transition_height > 0.2, "弧度 -1 必须形成完整反向圆弧", failures)
+	var arch_window := _place_component(&"arch_window", Vector2(1.5, 0.0), wall)
+	_smoke_check(arch_window.definition.shape == PCGComponentDefinition.Shape.ARCH_WINDOW, "拱形资产应按通用轮廓类型创建", failures)
+	_smoke_check(_mesh_is_closed(arch_window.cutter.mesh), "拱形开洞体必须封闭", failures)
+	_smoke_check(_mesh_signed_volume(arch_window.cutter.mesh) < 0.0, "拱形开洞体必须使用朝外法线", failures)
+	_smoke_check(_mesh_is_closed(arch_window.transition_shape.mesh), "拱形根部过渡必须封闭", failures)
+	_smoke_check(_mesh_signed_volume(arch_window.transition_shape.mesh) < 0.0, "拱形过渡必须使用朝外法线", failures)
+	var arch_full_vertices: int = arch_window.transition_shape.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size()
+	arch_window.transition_density = 0.25
+	arch_window.update_transform()
+	var arch_low_vertices: int = arch_window.transition_shape.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size()
+	_smoke_check(arch_low_vertices < arch_full_vertices, "25% 精度必须减少过渡顶点", failures)
+	arch_window.transition_density = 2.0
+	arch_window.update_transform()
+	var arch_high_vertices: int = arch_window.transition_shape.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size()
+	_smoke_check(arch_high_vertices > arch_full_vertices, "200% 精度必须增加过渡顶点", failures)
+	arch_window.transition_lod = 2
+	arch_window.update_transform()
+	var arch_lod_vertices: int = arch_window.transition_shape.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size()
+	_smoke_check(arch_lod_vertices < arch_high_vertices, "LOD 2 必须降低过渡顶点数", failures)
 	await get_tree().process_frame
 	await get_tree().process_frame
 	cylinder_round.transition_thickness = -1.0

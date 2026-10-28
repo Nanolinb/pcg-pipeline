@@ -1,6 +1,6 @@
 [application]
 config/name="Surface Component PCG"
-config/version="0.9.4"
+config/version="0.10.0"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 

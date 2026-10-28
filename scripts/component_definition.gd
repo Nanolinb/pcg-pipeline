@@ -4,6 +4,7 @@ extends Resource
 enum Shape {
 	ROUND_WINDOW,
 	SQUARE_WINDOW,
+	ARCH_WINDOW,
 }
 
 @export var id: StringName = &""
@@ -17,6 +18,8 @@ enum Shape {
 @export var transition_enabled: bool = true
 @export_range(-1.0, 1.0, 0.01) var transition_thickness: float = -1.0
 @export_range(-1.0, 1.0, 0.05) var transition_curvature: float = 0.65
+@export_range(0.25, 2.0, 0.25) var transition_density: float = 1.0
+@export_range(0, 2, 1) var transition_lod: int = 0
 @export_range(-90.0, 90.0, 1.0) var attachment_angle_degrees: float = 0.0
 @export var frame_width: float = 0.14
 @export_range(0.05, 1.0, 0.01) var min_scale: float = 0.35

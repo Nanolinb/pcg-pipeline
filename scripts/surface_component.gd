@@ -4,6 +4,7 @@ extends Node3D
 const ManifoldBuilder = preload("res://scripts/manifold_mesh_builder.gd")
 const TransitionBuilder = preload("res://scripts/transition_mesh_builder.gd")
 const SmoothMeshBuilder = preload("res://scripts/smooth_mesh_builder.gd")
+const OutlineGeometry = preload("res://scripts/outline_geometry.gd")
 
 var definition: PCGComponentDefinition
 var wall: Node3D
@@ -12,6 +13,8 @@ var attachment_angle_degrees: float = 0.0
 var transition_enabled: bool = true
 var transition_thickness: float = -1.0
 var transition_curvature: float = 0.65
+var transition_density: float = 1.0
+var transition_lod: int = 0
 var transition_shape: CSGMesh3D
 var transition_render: MeshInstance3D
 var transition_wireframe_enabled: bool = false
@@ -35,6 +38,8 @@ func configure(component_definition: PCGComponentDefinition, host_wall: Node3D) 
 	transition_enabled = definition.transition_enabled
 	transition_thickness = definition.transition_thickness
 	transition_curvature = definition.transition_curvature
+	transition_density = definition.transition_density
+	transition_lod = definition.transition_lod
 	name = "Component_%s" % definition.id
 	_build_pick_area()
 	_build_selection()
@@ -184,6 +189,27 @@ func _build_csg() -> void:
 		glass.material = _solid_material(definition.glass_material_id, definition.glass_profile, definition.glass_color, 0.16, 0.25, definition.texture_world_size)
 		visuals.append(glass)
 		_register_shape(glass, Vector3(0.0, 0.0, 0.015), Vector3(PI * 0.5, 0.0, 0.0))
+	elif definition.shape == PCGComponentDefinition.Shape.ARCH_WINDOW:
+		var arch_cutter := CSGMesh3D.new()
+		arch_cutter.name = "ArchOpeningCutter"
+		arch_cutter.operation = CSGShape3D.OPERATION_SUBTRACTION
+		arch_cutter.mesh = OutlineGeometry.solid(opening, wall.thickness + 0.7, 48, definition.texture_world_size)
+		cutter = arch_cutter
+		_register_shape(cutter, Vector3.ZERO)
+		var arch_frame := CSGMesh3D.new()
+		arch_frame.name = "ArchFrame"
+		arch_frame.operation = CSGShape3D.OPERATION_UNION
+		arch_frame.mesh = OutlineGeometry.ring(definition.size, opening, frame_depth, 48, definition.texture_world_size)
+		arch_frame.material = _solid_material(definition.frame_material_id, definition.frame_profile, definition.frame_color, 0.34, 0.0, definition.texture_world_size)
+		visuals.append(arch_frame)
+		_register_shape(arch_frame, Vector3(0.0, 0.0, frame_z))
+		var arch_glass := CSGMesh3D.new()
+		arch_glass.name = "ArchGlass"
+		arch_glass.operation = CSGShape3D.OPERATION_UNION
+		arch_glass.mesh = OutlineGeometry.solid(opening, 0.1, 48, definition.texture_world_size)
+		arch_glass.material = _solid_material(definition.glass_material_id, definition.glass_profile, definition.glass_color, 0.16, 0.25, definition.texture_world_size)
+		visuals.append(arch_glass)
+		_register_shape(arch_glass, Vector3(0.0, 0.0, 0.015))
 	else:
 		var box_cutter := CSGBox3D.new()
 		box_cutter.name = "OpeningCutter"
@@ -225,6 +251,10 @@ func effective_transition_thickness() -> float:
 	var footprint := definition.footprint_radius() * maxf(current_scale, 0.1)
 	var sagitta := radius - sqrt(maxf(radius * radius - footprint * footprint, 0.0))
 	return clampf(0.08 + sagitta * 0.9, 0.08, 0.5)
+
+func effective_transition_density() -> float:
+	var lod_scales := [1.0, 0.5, 0.25]
+	return transition_density * wall.transition_density * lod_scales[clampi(transition_lod, 0, 2)]
 
 func set_transition_enabled(value: bool) -> void:
 	if transition_enabled == value:
@@ -299,10 +329,11 @@ func update_transform() -> void:
 	for shape in visuals + [cutter]:
 		if shape.get_parent() != null:
 			shape.global_transform = global_transform * shape.get_meta("component_local") as Transform3D
-	var signature := "%s|%.4f|%.4f|%.3f|%.3f|%.3f|%.2f|%.3f|%.3f" % [
+	var signature := "%s|%.4f|%.4f|%.3f|%.3f|%.3f|%.2f|%.3f|%.3f|%.2f|%d" % [
 		definition.id, anchor.x, anchor.y, attachment_angle_degrees,
 		current_scale, transition_thickness, transition_curvature,
-		definition.root_embed, definition.root_flare
+		definition.root_embed, definition.root_flare,
+		transition_density, transition_lod
 	]
 	if signature != transition_signature:
 		transition_mesh_cache = TransitionBuilder.build(self)
@@ -344,6 +375,9 @@ static func make_preview(component_definition: PCGComponentDefinition) -> Node3D
 		glass.height = 0.08
 		glass.radial_segments = 48
 		_add_preview_mesh(root, glass, glass_material, Vector3(0.0, 0.0, 0.02), Vector3(PI * 0.5, 0.0, 0.0))
+	elif component_definition.shape == PCGComponentDefinition.Shape.ARCH_WINDOW:
+		_add_preview_mesh(root, OutlineGeometry.ring(component_definition.size, opening, frame_depth, 48, component_definition.texture_world_size), frame_material, Vector3(0.0, 0.0, frame_z))
+		_add_preview_mesh(root, OutlineGeometry.solid(opening, 0.08, 48, component_definition.texture_world_size), glass_material, Vector3(0.0, 0.0, 0.02))
 	else:
 		var parts := [
 			[Vector3(component_definition.size.x, component_definition.frame_width, frame_depth), Vector3(0.0, (component_definition.size.y - component_definition.frame_width) * 0.5, frame_z)],
