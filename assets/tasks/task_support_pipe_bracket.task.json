@@ -7,15 +7,32 @@
 		"display_name": "管道三角支架",
 		"category": "support",
 		"purpose": "沿墙管道敷设的承重三角支架，配合 surface_path_solver 路径按等距自动生成",
-		"style_tags": ["industrial", "structural", "galvanized", "pipework"],
+		"style_tags": [
+			"industrial",
+			"structural",
+			"galvanized",
+			"pipework"
+		],
 		"reference_urls": [],
 		"producer": "procedural",
 		"source_tool": "",
 		"source_prompt": "",
 		"source_seed": "",
-		"target_size": [0.34, 0.42, 0.3],
-		"size_min": [0.2, 0.25, 0.18],
-		"size_max": [0.6, 0.8, 0.6],
+		"target_size": [
+			0.34,
+			0.42,
+			0.3
+		],
+		"size_min": [
+			0.2,
+			0.25,
+			0.18
+		],
+		"size_max": [
+			0.6,
+			0.8,
+			0.6
+		],
 		"precision_tier": "far",
 		"tri_budget": 900,
 		"lod1_budget": 320,
@@ -23,8 +40,16 @@
 		"texture_size": 512,
 		"material_budget": 1,
 		"origin_convention": "root_center",
-		"outward_axis": [0.0, 0.0, -1.0],
-		"up_axis": [0.0, 1.0, 0.0],
+		"outward_axis": [
+			0.0,
+			0.0,
+			-1.0
+		],
+		"up_axis": [
+			0.0,
+			1.0,
+			0.0
+		],
 		"root_embed": 0.05,
 		"interface_requirements": "根节点位于支架与墙面贴合面的中心，outward_axis 指向墙外；管道承托面中心需落在 (0, size.y*0.5, size.z*0.5)，供路径求解器对齐管径",
 		"variable_appearance": "支臂长度、加强筋数量、镀锌/涂装配色",
@@ -32,6 +57,12 @@
 		"prohibited_features": "活动关节、焊接裂纹、装饰性镂空",
 		"variant_count": 4,
 		"status": "candidate",
-		"acceptance_notes": "程序化生成为主，骨架由 pipe_mesh_builder 参数驱动"
+		"acceptance_notes": "程序化生成为主，骨架由 pipe_mesh_builder 参数驱动",
+		"uv_policy": "world_scale",
+		"collision_policy": "convex",
+		"candidate_refs": [
+			"assets/candidates/support_pipe_bracket_a.tres",
+			"assets/candidates/support_pipe_bracket_b.tres"
+		]
 	}
 }

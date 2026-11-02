@@ -18,6 +18,8 @@ const PRECISION_TIERS: Array[StringName] = [&"near", &"mid", &"far"]
 const STATUSES: Array[StringName] = [
 	&"draft", &"assigned", &"candidate", &"pending_acceptance", &"accepted", &"rejected",
 ]
+const UV_POLICIES: Array[StringName] = [&"world_scale", &"texel_density", &"custom"]
+const COLLISION_POLICIES: Array[StringName] = [&"none", &"box", &"convex", &"concave"]
 const ID_PATTERN := "^[a-z0-9_-]+$"
 
 @export var format_version: int = FORMAT_VERSION
@@ -41,6 +43,10 @@ const ID_PATTERN := "^[a-z0-9_-]+$"
 @export var lod2_budget: int = 0
 @export var texture_size: int = 0
 @export var material_budget: int = 0
+## UV 展开策略：world_scale（世界尺度平铺）/ texel_density（固定纹素密度）/ custom。
+@export var uv_policy: StringName = &"world_scale"
+## 碰撞体策略：none / box（包围盒）/ convex（凸包）/ concave（精确凹面）。
+@export var collision_policy: StringName = &"box"
 @export var origin_convention: String = "root_center"
 @export var outward_axis: Vector3 = Vector3.BACK
 @export var up_axis: Vector3 = Vector3.UP
@@ -50,6 +56,8 @@ const ID_PATTERN := "^[a-z0-9_-]+$"
 @export var fixed_features: String = ""
 @export var prohibited_features: String = ""
 @export var variant_count: int = 1
+## 该任务已产出的候选资产引用（路径或稳定 ID）；只增不改，绝不覆盖来源溯源。
+@export var candidate_refs: PackedStringArray = PackedStringArray()
 @export var status: StringName = &"draft"
 @export var acceptance_notes: String = ""
 
@@ -72,6 +80,18 @@ func validation_errors(for_assignment: bool = false) -> Array[String]:
 		problems.append("precision_tier \"%s\" not in %s" % [String(precision_tier), ", ".join(PRECISION_TIERS)])
 	if not STATUSES.has(status):
 		problems.append("status \"%s\" not in %s" % [String(status), ", ".join(STATUSES)])
+	if not UV_POLICIES.has(uv_policy):
+		problems.append("uv_policy \"%s\" not in %s" % [String(uv_policy), ", ".join(UV_POLICIES)])
+	if not COLLISION_POLICIES.has(collision_policy):
+		problems.append("collision_policy \"%s\" not in %s" % [String(collision_policy), ", ".join(COLLISION_POLICIES)])
+	var seen_candidates := {}
+	for ref in candidate_refs:
+		if String(ref).is_empty():
+			problems.append("candidate_refs contains an empty entry")
+			continue
+		if seen_candidates.has(String(ref)):
+			problems.append("candidate_refs has duplicate entry \"%s\"" % String(ref))
+		seen_candidates[String(ref)] = true
 	if origin_convention.is_empty():
 		problems.append("origin_convention is empty")
 	if outward_axis.length_squared() < 0.000001:
@@ -159,6 +179,8 @@ func to_dict() -> Dictionary:
 		"lod2_budget": lod2_budget,
 		"texture_size": texture_size,
 		"material_budget": material_budget,
+		"uv_policy": String(uv_policy),
+		"collision_policy": String(collision_policy),
 		"origin_convention": origin_convention,
 		"outward_axis": [outward_axis.x, outward_axis.y, outward_axis.z],
 		"up_axis": [up_axis.x, up_axis.y, up_axis.z],
@@ -168,6 +190,7 @@ func to_dict() -> Dictionary:
 		"fixed_features": fixed_features,
 		"prohibited_features": prohibited_features,
 		"variant_count": variant_count,
+		"candidate_refs": Array(candidate_refs),
 		"status": String(status),
 		"acceptance_notes": acceptance_notes,
 	}
@@ -197,6 +220,17 @@ func from_dict(data: Dictionary) -> Array[String]:
 	var raw_status := StringName(String(data.get("status", "draft")))
 	if not raw_status.is_empty() and not STATUSES.has(raw_status):
 		problems.append("invalid field: status \"%s\"" % String(raw_status))
+	var raw_uv := StringName(String(data.get("uv_policy", "world_scale")))
+	if not raw_uv.is_empty() and not UV_POLICIES.has(raw_uv):
+		problems.append("invalid field: uv_policy \"%s\"" % String(raw_uv))
+	var raw_collision := StringName(String(data.get("collision_policy", "box")))
+	if not raw_collision.is_empty() and not COLLISION_POLICIES.has(raw_collision):
+		problems.append("invalid field: collision_policy \"%s\"" % String(raw_collision))
+	# candidate_refs 只作为候选引用追加解析，绝不回写来源提示词/种子/工具字段。
+	var raw_candidates := PackedStringArray(data.get("candidate_refs", PackedStringArray()))
+	for ref in raw_candidates:
+		if String(ref).is_empty():
+			problems.append("invalid field: candidate_refs contains an empty entry")
 	var axes: Dictionary = {}
 	for axis_field in ["target_size", "size_min", "size_max", "outward_axis", "up_axis"]:
 		var parsed: Variant = _parse_vec3(data.get(axis_field, null))
@@ -225,6 +259,8 @@ func from_dict(data: Dictionary) -> Array[String]:
 		lod2_budget = int(data.get("lod2_budget", 0))
 		texture_size = int(data.get("texture_size", 0))
 		material_budget = int(data.get("material_budget", 0))
+		uv_policy = raw_uv
+		collision_policy = raw_collision
 		origin_convention = String(data.get("origin_convention", "root_center"))
 		outward_axis = axes["outward_axis"]
 		up_axis = axes["up_axis"]
@@ -234,6 +270,7 @@ func from_dict(data: Dictionary) -> Array[String]:
 		fixed_features = String(data.get("fixed_features", ""))
 		prohibited_features = String(data.get("prohibited_features", ""))
 		variant_count = maxi(1, int(data.get("variant_count", 1)))
+		candidate_refs = raw_candidates
 		status = raw_status
 		acceptance_notes = String(data.get("acceptance_notes", ""))
 	return problems

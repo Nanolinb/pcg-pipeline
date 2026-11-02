@@ -25,6 +25,8 @@ func setup(controller: EditorPlugin, definitions: Array[PCGComponentDefinition])
 	title.add_theme_font_size_override("font_size", 20)
 	add_child(title)
 	_add_hint("先创建主体，再从组件库拖入视口。\n松开创建；选中后可拖动与合并。")
+	if plugin.has_method("open_asset_tasks"):
+		_add_button("资产任务", plugin.open_asset_tasks)
 	_add_heading("附着主体")
 	_add_button("创建平面墙", plugin.create_host.bind(0))
 	_add_button("创建圆柱", plugin.create_host.bind(1))
@@ -60,9 +62,6 @@ func setup(controller: EditorPlugin, definitions: Array[PCGComponentDefinition])
 	merge_selected_button = _add_button("合并选中组件", plugin.merge_selected)
 	merge_all_button = _add_button("全部合并", plugin.merge_all)
 	delete_button = _add_button("删除选中组件", plugin.delete_selected)
-	_add_heading("资产任务")
-	if plugin.has_method("open_asset_tasks"):
-		_add_button("资产任务", plugin.open_asset_tasks)
 
 func _add_heading(text: String) -> void:
 	var separator := HSeparator.new()

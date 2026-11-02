@@ -146,7 +146,7 @@ RebuildSignature
 - 表面宿主接口。
 - 格式迁移与校验。
 
-共享包不包含主程序 UI、具体 CSG 节点或 EditorPlugin 业务逻辑。两个主程序保持独立，通过 `addons/pcg_shared` 使用同一物理来源，禁止双向复制同步。
+共享包不包含主程序 UI、具体 CSG 节点或 EditorPlugin 业务逻辑。唯一物理目录为根工程 `addons/pcg_shared/`；PipeWeaver 和测试消费者通过同名链接使用，禁止双向复制同步，也不得再暴露第二条 `res://shared/` 资源路径。
 
 PipeWeaver 快照字段在 v0.19 随消费者冻结；v0.14 只复用格式版本和迁移接口。内存 `pipe_records` 不得被误称为已有磁盘快照格式。
 

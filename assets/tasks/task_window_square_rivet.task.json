@@ -7,15 +7,34 @@
 		"display_name": "铆钉方窗",
 		"category": "window",
 		"purpose": "工业墙面采光窗，与既有 square_window/round_window 组件同一锚点契约",
-		"style_tags": ["industrial", "riveted", "steel_frame", "frosted_glass"],
-		"reference_urls": ["assets://components/square_window.tres"],
+		"style_tags": [
+			"industrial",
+			"riveted",
+			"steel_frame",
+			"frosted_glass"
+		],
+		"reference_urls": [
+			"assets://components/square_window.tres"
+		],
 		"producer": "ai",
 		"source_tool": "Kimi Code / PCGAssetTask pipeline",
 		"source_prompt": "工业方窗，四边等宽钢框外圈一圈铆钉，磨砂厚玻璃，框体深灰底漆，与 assets/components/square_window.tres 比例一致（宽:高约 4:3）",
 		"source_seed": "pcg-task/window_square_rivet/v1",
-		"target_size": [1.2, 0.9, 0.18],
-		"size_min": [0.6, 0.45, 0.12],
-		"size_max": [2.0, 1.5, 0.28],
+		"target_size": [
+			1.2,
+			0.9,
+			0.18
+		],
+		"size_min": [
+			0.6,
+			0.45,
+			0.12
+		],
+		"size_max": [
+			2.0,
+			1.5,
+			0.28
+		],
 		"precision_tier": "mid",
 		"tri_budget": 2600,
 		"lod1_budget": 900,
@@ -23,8 +42,16 @@
 		"texture_size": 1024,
 		"material_budget": 3,
 		"origin_convention": "root_center",
-		"outward_axis": [0.0, 0.0, -1.0],
-		"up_axis": [0.0, 1.0, 0.0],
+		"outward_axis": [
+			0.0,
+			0.0,
+			-1.0
+		],
+		"up_axis": [
+			0.0,
+			1.0,
+			0.0
+		],
 		"root_embed": 0.12,
 		"interface_requirements": "根节点位于窗框中心， outward_axis 指向墙外；frame/glass 两个子节点对应 assets/materials 下 *_window_frame / *_window_glass 材质槽；锚点尺寸契约与 square_window.tres 相同",
 		"variable_appearance": "框体配色（深灰/锈棕/白垩）、玻璃透明度（磨砂/半透/透明）、铆钉间距",
@@ -32,6 +59,9 @@
 		"prohibited_features": "开窗铰链结构、窗棂分隔条、植物装饰",
 		"variant_count": 3,
 		"status": "assigned",
-		"acceptance_notes": ""
+		"acceptance_notes": "",
+		"uv_policy": "world_scale",
+		"collision_policy": "box",
+		"candidate_refs": []
 	}
 }

@@ -7,15 +7,32 @@
 		"display_name": "圆形检修舱门",
 		"category": "door",
 		"purpose": "管道间与压力舱隔断的圆形检修门，供墙体开口组件直接嵌入",
-		"style_tags": ["industrial", "riveted", "painted_metal", "pipework"],
+		"style_tags": [
+			"industrial",
+			"riveted",
+			"painted_metal",
+			"pipework"
+		],
 		"reference_urls": [],
 		"producer": "ai",
 		"source_tool": "Kimi Code / PCGAssetTask pipeline",
 		"source_prompt": "圆形工业检修舱门，铸钢门框带铆钉圈，中央轮辐式手轮，哑光军绿漆面，边缘微磨损，无文字贴花，配合 1.0-1.2m 直径墙体开口",
 		"source_seed": "pcg-task/door_hatch_round/v1",
-		"target_size": [1.1, 1.1, 0.22],
-		"size_min": [0.9, 0.9, 0.16],
-		"size_max": [1.4, 1.4, 0.3],
+		"target_size": [
+			1.1,
+			1.1,
+			0.22
+		],
+		"size_min": [
+			0.9,
+			0.9,
+			0.16
+		],
+		"size_max": [
+			1.4,
+			1.4,
+			0.3
+		],
 		"precision_tier": "near",
 		"tri_budget": 4200,
 		"lod1_budget": 1600,
@@ -23,8 +40,16 @@
 		"texture_size": 1024,
 		"material_budget": 2,
 		"origin_convention": "root_center",
-		"outward_axis": [0.0, 0.0, -1.0],
-		"up_axis": [0.0, 1.0, 0.0],
+		"outward_axis": [
+			0.0,
+			0.0,
+			-1.0
+		],
+		"up_axis": [
+			0.0,
+			1.0,
+			0.0
+		],
 		"root_embed": 0.12,
 		"interface_requirements": "根节点位于门板中心，outward_axis 为开门外侧法线；提供 door_open_angle 参数（0-110 度）与 frame/handle 两个子节点供材质槽绑定",
 		"variable_appearance": "漆面色调（军绿/灰蓝/锈橙）、铆钉数量（12/16/20）、磨损程度",
@@ -32,6 +57,9 @@
 		"prohibited_features": "玻璃视窗、电子锁面板、尖锐外露毛刺",
 		"variant_count": 3,
 		"status": "assigned",
-		"acceptance_notes": ""
+		"acceptance_notes": "",
+		"uv_policy": "texel_density",
+		"collision_policy": "convex",
+		"candidate_refs": []
 	}
 }

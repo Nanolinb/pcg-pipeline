@@ -185,6 +185,8 @@ func _build_ui() -> void:
 	_vec3_field(form, "尺寸下限 (m)", &"size_min", 0.0, 1000.0, 0.05)
 	_vec3_field(form, "尺寸上限 (m)", &"size_max", 0.0, 1000.0, 0.05)
 	_option_field(form, "精度档位", &"precision_tier", ["near", "mid", "far"])
+	_option_field(form, "UV 策略", &"uv_policy", ["world_scale", "texel_density", "custom"])
+	_option_field(form, "碰撞策略", &"collision_policy", ["none", "box", "convex", "concave"])
 	_spin_field(form, "LOD0 三角预算", &"tri_budget", 0.0, 100000000.0, 100.0)
 	_spin_field(form, "LOD1 三角预算", &"lod1_budget", 0.0, 100000000.0, 100.0)
 	_spin_field(form, "LOD2 三角预算", &"lod2_budget", 0.0, 100000000.0, 100.0)
@@ -199,6 +201,7 @@ func _build_ui() -> void:
 	_text_field(form, "固定特征", &"fixed_features")
 	_text_field(form, "禁止特征", &"prohibited_features")
 	_spin_field(form, "变体数量", &"variant_count", 1.0, 256.0, 1.0)
+	_line_field(form, "候选引用（逗号分隔）", &"candidate_refs")
 	_option_field(form, "状态", &"status",
 		["draft", "assigned", "candidate", "pending_acceptance", "accepted", "rejected"])
 	_text_field(form, "验收备注", &"acceptance_notes")
@@ -298,12 +301,14 @@ func _read_form_into_task() -> void:
 	if current_task == null:
 		return
 	for field in fields:
+		if not _task_has_field(String(field)):
+			continue
 		var control: Control = fields[field]
 		var value: Variant = _read_control(control)
 		match String(field):
-			"task_id", "category", "producer", "precision_tier", "status":
+			"task_id", "category", "producer", "precision_tier", "uv_policy", "collision_policy", "status":
 				current_task.set(String(field), StringName(str(value).strip_edges()))
-			"style_tags", "reference_urls":
+			"style_tags", "reference_urls", "candidate_refs":
 				var packed := PackedStringArray()
 				for part in str(value).split(",", false):
 					packed.append(part.strip_edges())
@@ -312,6 +317,14 @@ func _read_form_into_task() -> void:
 				current_task.set(String(field), int(value))
 			_:
 				current_task.set(String(field), value)
+
+func _task_has_field(field: String) -> bool:
+	if current_task == null:
+		return false
+	for property in current_task.get_property_list():
+		if String(property.get("name", "")) == field:
+			return true
+	return false
 
 func _read_control(control: Control) -> Variant:
 	if control is LineEdit:
@@ -331,6 +344,8 @@ func _write_form_from_task() -> void:
 	if current_task == null:
 		return
 	for field in fields:
+		if not _task_has_field(String(field)):
+			continue
 		var control: Control = fields[field]
 		var value: Variant = current_task.get(String(field))
 		if control is LineEdit:

@@ -40,6 +40,8 @@ func _ready() -> void:
 	dock.show()
 	command_history = PCGEditCommandHistory.new(get_undo_redo(), _apply_edit_command)
 	EditorInterface.get_selection().selection_changed.connect(_on_editor_selection_changed)
+	if "--asset-task-gui-check" in OS.get_cmdline_user_args():
+		call_deferred("open_asset_tasks")
 
 func _exit_tree() -> void:
 	_cancel_ghost()

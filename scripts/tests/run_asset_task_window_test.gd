@@ -91,7 +91,8 @@ func _check_window_opens() -> void:
 		and _window.validation_list != null, "task selector/new/save/reload/validation controls exist")
 	var required := ["task_id", "display_name", "category", "purpose", "producer",
 		"source_tool", "source_prompt", "source_seed", "target_size", "size_min", "size_max",
-		"precision_tier", "tri_budget", "lod1_budget", "lod2_budget", "texture_size",
+		"precision_tier", "uv_policy", "collision_policy", "candidate_refs", "tri_budget",
+		"lod1_budget", "lod2_budget", "texture_size",
 		"material_budget", "interface_requirements", "status", "variant_count"]
 	var missing := PackedStringArray()
 	for field in required:
@@ -134,6 +135,9 @@ func _fill_valid_form() -> void:
 	_window.set_field_value(&"size_min", Vector3(0.8, 2.0, 0.2))
 	_window.set_field_value(&"size_max", Vector3(2.0, 3.0, 0.5))
 	_window.set_field_value(&"precision_tier", &"near")
+	_window.set_field_value(&"uv_policy", &"texel_density")
+	_window.set_field_value(&"collision_policy", &"convex")
+	_window.set_field_value(&"candidate_refs", "res://assets/tasks/draft_door_a, res://assets/tasks/draft_door_b")
 	_window.set_field_value(&"tri_budget", 8000)
 	_window.set_field_value(&"lod1_budget", 4000)
 	_window.set_field_value(&"lod2_budget", 1500)
@@ -165,9 +169,20 @@ func _check_save_and_reload() -> void:
 		_record(String(saved.purpose) == "可通行门洞，嵌入门框组件"
 			and String(saved.interface_requirements) == "需要 1.0m 通行净空，铰链接口两枚",
 			"saved task round-trips purpose and interface requirements")
+		_record(StringName(saved.uv_policy) == &"texel_density"
+			and StringName(saved.collision_policy) == &"convex",
+			"saved task round-trips uv_policy and collision_policy")
+		_record(saved.candidate_refs is PackedStringArray
+			and saved.candidate_refs.size() == 2
+			and String(saved.candidate_refs[0]) == "res://assets/tasks/draft_door_a"
+			and String(saved.candidate_refs[1]) == "res://assets/tasks/draft_door_b",
+			"saved task round-trips candidate_refs")
 		_window.set_field_value(&"display_name", "未保存的篡改")
+		_window.set_field_value(&"candidate_refs", "res://assets/tasks/forged")
 		_window._on_reload_pressed()
 		_record(String(_window.get_field_value(&"display_name")) == "拱形门", "重开 restores saved values and discards edits")
+		_record(String(_window.get_field_value(&"candidate_refs")) == "res://assets/tasks/draft_door_a, res://assets/tasks/draft_door_b",
+			"重开 restores candidate_refs and discards edits")
 		_record(String(_window.current_task.display_name) == "拱形门", "重开 reloads task object from disk")
 	# 再存第二个任务，验证列表增长。
 	_window._on_new_pressed()

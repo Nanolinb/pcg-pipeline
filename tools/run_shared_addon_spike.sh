@@ -3,7 +3,7 @@
 #
 # 流程：把根工程、PipeWeaver、最小第三方消费者各复制到一次性临时目录
 # （不复制 .godot/，等价于清理缓存），将共享模块链接指向工作区
-# shared/addons/pcg_shared 真实文件，headless --import 重导入后运行
+# addons/pcg_shared 真实文件，headless --import 重导入后运行
 # 三工程共用的 spike_check.gd。任一消费者失败返回非零退出码。
 # 原工程的 .godot/ 缓存不会被修改或删除。
 set -u
