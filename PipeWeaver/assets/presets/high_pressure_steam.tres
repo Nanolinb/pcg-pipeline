@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="PipePreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/pipe_preset.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"high_pressure_steam"
+display_name = "高压蒸汽管"
+description = "深色厚壁高压蒸汽管。大直径、高金属度、32 环向分段和 12 段圆角，适合工业主管。"
+diameter = 0.48
+diameter_profile = [{"end": 0.75, "diameter": 0.48}, {"end": 1.0, "diameter": 0.40}]
+radial_segments = 32
+texture_world_size = 0.8
+default_corner_segments = 12
+auto_optimize = true
+texture_link = true
+straight_step = 3.5
+curve_step = 0.24
+straight_angle = 2.5
+manual_step = 0.16
+detail_tiling = 5.0
+detail_strength = 0.34
+normal_strength = 0.7
+ao_strength = 0.4
+tint = Color(0.48, 0.56, 0.62, 1.0)
+metallic_offset = 0.2
+roughness_offset = -0.08

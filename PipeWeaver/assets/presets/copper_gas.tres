@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="PipePreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/pipe_preset.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"copper_gas"
+display_name = "铜质燃气管"
+description = "暖色铜质燃气支管。较小管径、较细纹理和较高金属反射。"
+diameter = 0.22
+diameter_profile = [{"end": 1.0, "diameter": 0.22}]
+radial_segments = 24
+texture_world_size = 0.45
+default_corner_segments = 10
+auto_optimize = true
+texture_link = true
+straight_step = 4.0
+curve_step = 0.28
+straight_angle = 3.0
+manual_step = 0.14
+detail_tiling = 7.0
+detail_strength = 0.22
+normal_strength = 0.5
+ao_strength = 0.25
+tint = Color(1.0, 0.62, 0.32, 1.0)
+metallic_offset = 0.3
+roughness_offset = -0.05

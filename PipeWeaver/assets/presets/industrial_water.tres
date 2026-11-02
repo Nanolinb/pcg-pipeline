@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="PipePreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/pipe_preset.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"industrial_water"
+display_name = "工业水气管"
+description = "通用青色工业水气管道。中等管径、金属漆面、24 环向分段，默认自动直线减面。"
+diameter = 0.34
+diameter_profile = [{"end": 1.0, "diameter": 0.34}]
+radial_segments = 24
+texture_world_size = 0.65
+default_corner_segments = 8
+auto_optimize = true
+texture_link = true
+straight_step = 4.0
+curve_step = 0.28
+straight_angle = 3.0
+manual_step = 0.18
+detail_tiling = 6.0
+detail_strength = 0.28
+normal_strength = 0.55
+ao_strength = 0.0
+tint = Color(0.75, 1.0, 1.05, 1.0)
+metallic_offset = 0.0
+roughness_offset = -0.03

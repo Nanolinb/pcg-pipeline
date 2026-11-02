@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="PipePreset" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/pipe_preset.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"pvc_drain"
+display_name = "PVC 排水管"
+description = "浅色非金属 PVC 排水管。较大管径、低金属度、高粗糙度和较少环向分段。"
+diameter = 0.38
+diameter_profile = [{"end": 1.0, "diameter": 0.38}]
+radial_segments = 20
+texture_world_size = 0.7
+default_corner_segments = 8
+auto_optimize = true
+texture_link = true
+straight_step = 4.5
+curve_step = 0.3
+straight_angle = 3.0
+manual_step = 0.2
+detail_tiling = 4.0
+detail_strength = 0.12
+normal_strength = 0.2
+ao_strength = 0.3
+tint = Color(0.92, 0.94, 0.88, 1.0)
+metallic_offset = -0.6
+roughness_offset = 0.28

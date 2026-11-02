@@ -11,6 +11,8 @@ uniform float detail_tiling = 6.0;
 uniform float detail_strength = 0.28;
 uniform float normal_strength = 0.55;
 uniform float ao_strength = 0.0;
+uniform float metallic_offset = 0.0;
+uniform float roughness_offset = 0.0;
 
 void fragment() {
 	vec3 base = tint.rgb * texture(base_texture, UV).rgb;
@@ -18,8 +20,8 @@ void fragment() {
 	vec3 orm = texture(orm_texture, UV).rgb;
 	vec3 baked_ao = texture(ao_texture, UV2).rgb;
 	ALBEDO = base * mix(vec3(1.0), detail * 1.35, detail_strength);
-	ROUGHNESS = clamp(orm.g, 0.06, 1.0);
-	METALLIC = orm.b;
+	ROUGHNESS = clamp(orm.g + roughness_offset, 0.06, 1.0);
+	METALLIC = clamp(orm.b + metallic_offset, 0.0, 1.0);
 	AO = orm.r * mix(1.0, baked_ao.r, ao_strength);
 	AO_LIGHT_AFFECT = 1.0;
 	NORMAL_MAP = texture(detail_normal_texture, UV * detail_tiling).rgb;

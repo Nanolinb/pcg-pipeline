@@ -3,6 +3,7 @@ extends Node3D
 const PipeBuilder = preload("res://addons/pcg_shared/pipe_mesh_builder.gd")
 const SurfaceSolver = preload("res://addons/pcg_shared/surface_path_solver.gd")
 const TextureLibrary = preload("res://scripts/pipe_texture_library.gd")
+const PresetCatalog = preload("res://scripts/pipe_preset_catalog.gd")
 
 var camera: Camera3D
 var pipe_root: Node3D
@@ -74,6 +75,9 @@ var ao_strength: float = 0.0
 var baked_ao_texture: Texture2D
 var generated_connector_positions: Array = []
 var ao_toggle: CheckBox
+var preset_catalog := PresetCatalog.new()
+var preset_option: OptionButton
+var preset_description: Label
 
 var camera_target := Vector3(0.0, 1.5, 0.0)
 var camera_yaw: float = 0.66
@@ -277,6 +281,22 @@ func _build_ui() -> void:
 	select_button.pressed.connect(_set_mode.bind("select"))
 	mode_row.add_child(select_button)
 	_add_hint(box, "起止点：可跨两个主体，自动选择最短贴合路径\nPaint：点击现有管道插入点；空白拖动绘制\n蓝色 Z 轴：单独调整该节点离墙距离")
+	_add_heading(box, "管道类型")
+	preset_catalog.load_all()
+	preset_option = OptionButton.new()
+	for i in preset_catalog.definitions.size():
+		var preset: PipePreset = preset_catalog.definitions[i]["preset"]
+		preset_option.add_item(preset.display_name, i)
+	preset_option.item_selected.connect(_apply_preset_to_selection)
+	box.add_child(preset_option)
+	preset_description = Label.new()
+	preset_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	preset_description.add_theme_font_size_override("font_size", 12)
+	box.add_child(preset_description)
+	_update_preset_description(0)
+	for error in preset_catalog.errors:
+		_add_hint(box, error)
+	_add_hint(box, "切换类型立即替换选中管道，多选时批量替换")
 	_add_heading(box, "当前管道")
 	var pipe_lifecycle_row := HBoxContainer.new()
 	box.add_child(pipe_lifecycle_row)
@@ -654,6 +674,7 @@ func _reedit_selected_pipe() -> void:
 	clearance = record["clearance"]
 	default_corner_segments = record["default_corner_segments"]
 	mesh_optimization = record.get("optimization", mesh_optimization).duplicate()
+	pipe_material = record.get("material", pipe_material)
 	detail_tiling = record.get("detail_tiling", detail_tiling)
 	detail_strength = record.get("detail_strength", detail_strength)
 	normal_strength = record.get("normal_strength", normal_strength)
@@ -728,6 +749,62 @@ func _bake_pipe_root(source: Node3D, pipe_id: int) -> Node3D:
 	source.queue_free()
 	return fixed
 
+func _update_preset_description(index: int) -> void:
+	if preset_description == null:
+		return
+	var preset: PipePreset = preset_catalog.get_preset(index)
+	preset_description.text = preset.description if preset != null else "无可用预设"
+
+func _apply_preset_to_selection(index: int) -> void:
+	var preset: PipePreset = preset_catalog.get_preset(index)
+	if preset == null or control_points.size() < 2:
+		return
+	_update_preset_description(index)
+	var ids: Array = selected_pipe_ids.duplicate()
+	if ids.is_empty():
+		ids.append(current_pipe_id)
+	for id in ids:
+		if id != current_pipe_id:
+			selected_pipe_ids = [id]
+			_reedit_selected_pipe()
+		_apply_preset_to_current(preset)
+		_sync_current_record()
+		_finish_current_pipe(false)
+	selected_pipe_ids = ids
+	_update_selection_visuals()
+	status_label.text = "已将 %d 根管道替换为“%s”，路径和控制点保持不变。" % [ids.size(), preset.display_name]
+	print("PIPE_PRESET_APPLIED id=%s count=%d" % [preset.id, ids.size()])
+
+func _apply_preset_to_current(preset: PipePreset) -> void:
+	segments = preset.diameter_profile.duplicate(true)
+	if segments.is_empty():
+		segments = [{"end": 1.0, "diameter": preset.diameter}]
+	radial_segments = preset.radial_segments
+	texture_world_size = preset.texture_world_size
+	default_corner_segments = preset.default_corner_segments
+	mesh_optimization = {
+		"auto": preset.auto_optimize,
+		"texture_link": preset.texture_link,
+		"straight_step": preset.straight_step,
+		"curve_step": preset.curve_step,
+		"straight_angle": preset.straight_angle,
+		"manual_step": preset.manual_step
+	}
+	detail_tiling = preset.detail_tiling
+	detail_strength = preset.detail_strength
+	normal_strength = preset.normal_strength
+	ao_strength = preset.ao_strength
+	pipe_material = pipe_material.duplicate()
+	pipe_material.set_shader_parameter("tint", preset.tint)
+	pipe_material.set_shader_parameter("metallic_offset", preset.metallic_offset)
+	pipe_material.set_shader_parameter("roughness_offset", preset.roughness_offset)
+	pipe_material.set_shader_parameter("detail_tiling", detail_tiling)
+	pipe_material.set_shader_parameter("detail_strength", detail_strength)
+	pipe_material.set_shader_parameter("normal_strength", normal_strength)
+	pipe_material.set_shader_parameter("ao_strength", ao_strength)
+	_rebuild_segment_rows()
+	_rebuild_from_controls()
+
 func _sync_current_record() -> void:
 	if pipe_root == null or control_points.size() < 2:
 		return
@@ -752,11 +829,12 @@ func _sync_current_record() -> void:
 		"normal_strength": normal_strength,
 		"ao_strength": ao_strength,
 		"ao_texture": baked_ao_texture,
+		"material": pipe_material,
 		"finalized": pipe_finalized,
 		"baked": pipe_records.get(current_pipe_id, {}).get("baked", false)
 	}
 
-func _finish_current_pipe() -> void:
+func _finish_current_pipe(count_completion: bool = true) -> void:
 	if pipe_finalized:
 		status_label.text = "当前管道已经完成；可点击“新建管道”。"
 		return
@@ -769,7 +847,8 @@ func _finish_current_pipe() -> void:
 	pipe_records[current_pipe_id]["finalized"] = true
 	mode = "finished"
 	history.clear()
-	completed_pipe_count += 1
+	if count_completion:
+		completed_pipe_count += 1
 	endpoints_button.button_pressed = false
 	paint_button.button_pressed = false
 	edit_button.button_pressed = false
