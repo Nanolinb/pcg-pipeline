@@ -1,0 +1,629 @@
+
+GATE_BEGIN: project versions
+GATE_VERSION: /Users/shaunlin/Kimi Space/PCG管道/project.godot = 0.13.0
+GATE_VERSION: /Users/shaunlin/Kimi Space/PCG管道/PipeWeaver/project.godot = 0.13.0
+GATE_PASS: project versions
+
+GATE_BEGIN: Surface Component headless smoke
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+PCG_SMOKE_TEST_PASS: dual hosts, smoothed CSG render, visible wireframe material, snapping, handles, isolated shrink
+ERROR: Pages in use exist at exit in PagedAllocator: N20RasterizerSceneDummy21GeometryInstanceDummyE
+   at: ~PagedAllocator (./core/templates/paged_allocator.h:169)
+ERROR: 7 RID allocations of type 'N13RendererDummy9DummyMeshE' were leaked at exit.
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+ERROR: 3 RID allocations of type 'N13RendererDummy15MaterialStorage13DummyMaterialE' were leaked at exit.
+ERROR: 2 RID allocations of type 'N13RendererDummy15MaterialStorage11DummyShaderE' were leaked at exit.
+ERROR: 7 RID allocations of type 'N17RendererSceneCull8InstanceE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+     at: cleanup (core/object/object.cpp:2641)
+ERROR: 1 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+ERROR: Pages in use exist at exit in PagedAllocator: N7Variant5Pools12BucketMediumE
+   at: ~PagedAllocator (./core/templates/paged_allocator.h:169)
+GATE_PASS: Surface Component headless smoke
+
+GATE_BEGIN: PipeWeaver headless smoke
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+PIPE_SMOKE_BEGIN
+PIPE_PCG_GENERATED length=3.775 vertices=625 connectors=4 segments=3
+PIPE_PCG_READY
+[1] 启动示例管道（G1_Pipe 基线）
+  ok - 示例管道在 headless 下实际生成
+  ok - 基线长度 3.775（实测 3.775）
+  ok - 基线顶点数 625（实测 625）
+  ok - 管体 ContinuousPipe 网格存在
+  ok - 管体索引为完整三角形
+  ok - 管体法线与顶点一一对应
+  ok - 管体 UV 与顶点一一对应
+  ok - 管体附带 4 个接头网格实例
+  ok - 记录 4 个接头位置（2 端部 + 2 变径法兰）
+  ok - 管体带拾取碰撞体
+[2] 表面路径求解（同主体 + 跨主体）
+  ok - 同主体表面寻路返回路径点
+  ok - SideBlock 主体存在
+  ok - 跨主体最短贴合路径返回路径点
+  ok - 跨主体路径标注硬转角
+[3] 管体/接头构建器直测
+  ok - 单段直管生成成功
+  ok - 单段直管网格存在
+  ok - 直管顶点数符合环向分段（实测 39）
+  ok - 单段管两个端部接头
+  ok - 直管长度接近路径长度（实测 2.000）
+  ok - 两段变径产生 3 个接头
+  ok - 接头网格可构建且非空
+[4] 同材质多 Surface 合批
+  ok - 同材质同区域 Surface 合并为一个 Chunk
+  ok - 不同 Surface 的相同旧索引不复用顶点（实测 6）
+  ok - 第二 Surface 顶点位置未串用第一 Surface
+[5] 内存 pipe_records 重编辑与 Chunk 合批
+PIPE_FINALIZED Pipe_001 children=6
+  ok - 管 1 完成并写入 pipe_records
+  ok - 管 2 路径求解成功
+PIPE_STARTED Pipe_002
+PIPE_PCG_GENERATED length=6.383 vertices=625 connectors=2 segments=1
+  ok - 管 2 已生成（顶点 625）
+PIPE_FINALIZED Pipe_002 children=4
+  ok - 管 2 完成并写入 pipe_records
+PIPE_PCG_GENERATED length=3.775 vertices=625 connectors=4 segments=3
+  ok - 重编辑后当前管道切回管 1
+  ok - 重编辑复用原 pipe root
+  ok - 控制点从内存记录恢复
+  ok - 重编辑后重新生成基线网格（顶点 625）
+PIPE_FINALIZED Pipe_001 children=6
+PIPE_BAKED id=1 chunks=4 materials=12
+  ok - 管 1 标记为已合批
+  ok - 合批后 PCG 记录仍保留（可恢复编辑）
+  ok - 合批根节点命名为 Pipe_001_Fixed
+  ok - Chunk 数量 >= 1（实测 4）
+  ok - Chunk PipeChunk_-1_0_0 网格有效
+  ok - Chunk PipeChunk_-1_0_0 顶点非空
+  ok - Chunk PipeChunk_-1_0_0 索引为完整三角形
+  ok - Chunk PipeChunk_0_0_0 网格有效
+  ok - Chunk PipeChunk_0_0_0 顶点非空
+  ok - Chunk PipeChunk_0_0_0 索引为完整三角形
+  ok - Chunk @MeshInstance3D@447 网格有效
+  ok - Chunk @MeshInstance3D@447 顶点非空
+  ok - Chunk @MeshInstance3D@447 索引为完整三角形
+  ok - Chunk @MeshInstance3D@450 网格有效
+  ok - Chunk @MeshInstance3D@450 顶点非空
+  ok - Chunk @MeshInstance3D@450 索引为完整三角形
+  ok - Chunk 网格节点数与 meta 一致（4 == 4）
+  ok - 合批三角形索引守恒（源 6912 -> 合批 6912）
+  ok - 合批管体顶点含源网格（662 >= 625，差额为 chunk 边界复制）
+  ok - 合批根保留拾取碰撞体
+PIPE_PCG_GENERATED length=6.383 vertices=625 connectors=2 segments=1
+  ok - 合批后重编辑切回管 2
+  ok - 重编辑清除管 2 baked 标记
+  ok - 管 2 从记录恢复并重新生成（顶点 625）
+  ok - 管 2 root 下重新生成 ContinuousPipe
+PIPE_SMOKE_PASS checks=56
+GATE_PASS: PipeWeaver headless smoke
+
+GATE_BEGIN: edit command contract
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+EDIT_CMD_BEGIN: shared edit command checks
+EDIT_CMD_CHECK_PASS: pcg_edit_command.gd compiles (res://addons/pcg_shared/pcg_edit_command.gd)
+EDIT_CMD_CHECK_PASS: edit_command_history.gd compiles (res://addons/pcg_shared/edit_command_history.gd)
+EDIT_CMD_CHECK_PASS: material_profile_codec.gd compiles (res://addons/pcg_shared/material_profile_codec.gd)
+EDIT_CMD_CHECK_PASS: editor_plugin.gd compiles with command integration (res://addons/surface_components/editor_plugin.gd)
+EDIT_CMD_CHECK_PASS: command to_dict/from_dict round-trip preserves patch hash
+EDIT_CMD_CHECK_PASS: from_dict rejects missing command_id
+EDIT_CMD_CHECK_PASS: T7: 1.0 and 1.0000001 quantize equal
+EDIT_CMD_CHECK_PASS: T7: 1.0 and 1.00001 quantize different
+EDIT_CMD_CHECK_PASS: anchor normalizes to float array
+EDIT_CMD_CHECK_PASS: create command applies after patch
+EDIT_CMD_CHECK_PASS: undo of create restores empty before
+EDIT_CMD_CHECK_PASS: redo of create reapplies after patch
+EDIT_CMD_CHECK_PASS: create committed once
+EDIT_CMD_CHECK_PASS: param edit applies after patch
+EDIT_CMD_CHECK_PASS: undo of param edit restores before patch
+EDIT_CMD_CHECK_PASS: three drag submissions merge into one history entry (committed=1)
+EDIT_CMD_CHECK_PASS: merged drag ends at latest after
+EDIT_CMD_CHECK_PASS: every merged submission re-applies patch entry
+EDIT_CMD_CHECK_PASS: one undo restores drag start (single history entry)
+EDIT_CMD_CHECK_PASS: redo reapplies merged latest after
+EDIT_CMD_CHECK_PASS: interleaving command breaks merge (committed=3)
+EDIT_CMD_CHECK_PASS: first undo reverts second drag only
+EDIT_CMD_CHECK_PASS: three undos restore drag start
+EDIT_CMD_CHECK_PASS: submissions 900ms apart do not merge (committed=2)
+EDIT_CMD_CHECK_PASS: empty merge_key never merges
+EDIT_CMD_CHECK_PASS: submit after undo opens a new entry, no stale merge
+EDIT_CMD_CHECK_PASS: merge boundary clears committed history
+EDIT_CMD_CHECK_PASS: merge boundary prevents stale pending merge
+EDIT_CMD_CHECK_PASS: T10: patch hash identical across do/undo/redo
+EDIT_CMD_CHECK_PASS: state after redo matches after patch
+EDIT_CMD_CHECKS: 30 run, 0 failed
+EDIT_CMD_RESULT: PASS
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+     at: cleanup (core/object/object.cpp:2641)
+ERROR: 2 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+GATE_PASS: edit command contract
+
+GATE_BEGIN: surface host contract
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+HOST_TEST_BEGIN: surface host contract check
+HOST_TEST_PASS: global class registered: PCGSurfaceHost
+HOST_TEST_PASS: global class registered: PCGSurfaceHostData
+HOST_TEST_PASS: scripts compile (host=true data=true fused=true definition=true)
+HOST_TEST_PASS: surface kind enum values stable
+HOST_TEST_PASS: fused wall kind enum matches contract enum
+HOST_TEST_PASS: pure data host satisfies contract (kind=0)
+HOST_TEST_PASS: host_path_data structure stable (kind=0)
+HOST_TEST_PASS: occupancy_query returns Array (kind=0)
+HOST_TEST_PASS: surface_frame structure stable (kind=0)
+HOST_TEST_PASS: surface_frame axes orthogonal (kind=0)
+HOST_TEST_PASS: pure data host satisfies contract (kind=1)
+HOST_TEST_PASS: host_path_data structure stable (kind=1)
+HOST_TEST_PASS: occupancy_query returns Array (kind=1)
+HOST_TEST_PASS: surface_frame structure stable (kind=1)
+HOST_TEST_PASS: surface_frame axes orthogonal (kind=1)
+HOST_TEST_PASS: pure data host satisfies contract (kind=2)
+HOST_TEST_PASS: host_path_data structure stable (kind=2)
+HOST_TEST_PASS: occupancy_query returns Array (kind=2)
+HOST_TEST_PASS: surface_frame structure stable (kind=2)
+HOST_TEST_PASS: surface_frame axes orthogonal (kind=2)
+HOST_TEST_PASS: plane anchor maps to surface point (origin=(1.5, -2.0, 0.18))
+HOST_TEST_PASS: plane distance is euclidean
+HOST_TEST_PASS: cylinder distance wraps around circumference
+HOST_TEST_PASS: cylinder anchor unwraps to radial point
+HOST_TEST_PASS: cylinder radial raycast hits anchor (anchor=(0.0, 0.7))
+HOST_TEST_PASS: dome anchor normal tilts upward (normal=(0.0, 0.220398, 0.97541))
+HOST_TEST_PASS: cylinder band anchor normal stays horizontal
+HOST_TEST_PASS: register_component deduplicates and updates anchor
+HOST_TEST_PASS: unregister_component removes anchor and order
+HOST_TEST_PASS: clamp_anchor wraps arc coordinate (x=-0.893801)
+HOST_TEST_PASS: fused wall adapter satisfies contract
+HOST_TEST_PASS: fused wall default kind matches contract PLANE
+HOST_TEST_PASS: surface_transform parity (plane) (anchor=(0.0, 0.0))
+HOST_TEST_PASS: surface_transform parity (plane) (anchor=(0.6, -1.1))
+HOST_TEST_PASS: surface_transform parity (plane) (anchor=(-1.7, 2.2))
+HOST_TEST_PASS: surface_transform parity (plane) (anchor=(2.9, 0.4))
+HOST_TEST_PASS: surface_raycast matches ray_anchor (plane)
+HOST_TEST_PASS: pure data raycast parity (plane)
+HOST_TEST_PASS: surface_distance parity (plane) (a=(0.0, 0.0) b=(0.0, 0.0))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(0.0, 0.0) b=(0.6, -1.1))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(0.0, 0.0) b=(-1.7, 2.2))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(0.0, 0.0) b=(2.9, 0.4))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(0.6, -1.1) b=(0.0, 0.0))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(0.6, -1.1) b=(0.6, -1.1))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(0.6, -1.1) b=(-1.7, 2.2))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(0.6, -1.1) b=(2.9, 0.4))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(-1.7, 2.2) b=(0.0, 0.0))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(-1.7, 2.2) b=(0.6, -1.1))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(-1.7, 2.2) b=(-1.7, 2.2))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(-1.7, 2.2) b=(2.9, 0.4))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(2.9, 0.4) b=(0.0, 0.0))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(2.9, 0.4) b=(0.6, -1.1))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(2.9, 0.4) b=(-1.7, 2.2))
+HOST_TEST_PASS: surface_distance parity (plane) (a=(2.9, 0.4) b=(2.9, 0.4))
+HOST_TEST_PASS: clamp_anchor parity (plane) (anchor=(0.0, 0.0))
+HOST_TEST_PASS: clamp_anchor parity (plane) (anchor=(0.6, -1.1))
+HOST_TEST_PASS: clamp_anchor parity (plane) (anchor=(-1.7, 2.2))
+HOST_TEST_PASS: clamp_anchor parity (plane) (anchor=(2.9, 0.4))
+HOST_TEST_PASS: clamp_anchor parity (plane) (anchor=(40.0, 8.0))
+HOST_TEST_PASS: clamp_anchor parity (plane) (anchor=(-40.0, -8.0))
+HOST_TEST_PASS: surface_frame consistent with surface_transform (plane)
+HOST_TEST_PASS: adapter host_path_data structure stable (plane)
+HOST_TEST_PASS: adapter occupancy_query stable empty (plane)
+HOST_TEST_PASS: surface_transform parity (cylinder) (anchor=(0.0, 0.0))
+HOST_TEST_PASS: surface_transform parity (cylinder) (anchor=(0.6, -1.1))
+HOST_TEST_PASS: surface_transform parity (cylinder) (anchor=(-1.7, 2.2))
+HOST_TEST_PASS: surface_transform parity (cylinder) (anchor=(2.9, 0.4))
+HOST_TEST_PASS: surface_raycast matches ray_anchor (cylinder)
+HOST_TEST_PASS: pure data raycast parity (cylinder)
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(0.0, 0.0) b=(0.0, 0.0))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(0.0, 0.0) b=(0.6, -1.1))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(0.0, 0.0) b=(-1.7, 2.2))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(0.0, 0.0) b=(2.9, 0.4))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(0.6, -1.1) b=(0.0, 0.0))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(0.6, -1.1) b=(0.6, -1.1))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(0.6, -1.1) b=(-1.7, 2.2))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(0.6, -1.1) b=(2.9, 0.4))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(-1.7, 2.2) b=(0.0, 0.0))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(-1.7, 2.2) b=(0.6, -1.1))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(-1.7, 2.2) b=(-1.7, 2.2))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(-1.7, 2.2) b=(2.9, 0.4))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(2.9, 0.4) b=(0.0, 0.0))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(2.9, 0.4) b=(0.6, -1.1))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(2.9, 0.4) b=(-1.7, 2.2))
+HOST_TEST_PASS: surface_distance parity (cylinder) (a=(2.9, 0.4) b=(2.9, 0.4))
+HOST_TEST_PASS: clamp_anchor parity (cylinder) (anchor=(0.0, 0.0))
+HOST_TEST_PASS: clamp_anchor parity (cylinder) (anchor=(0.6, -1.1))
+HOST_TEST_PASS: clamp_anchor parity (cylinder) (anchor=(-1.7, 2.2))
+HOST_TEST_PASS: clamp_anchor parity (cylinder) (anchor=(2.9, 0.4))
+HOST_TEST_PASS: clamp_anchor parity (cylinder) (anchor=(40.0, 8.0))
+HOST_TEST_PASS: clamp_anchor parity (cylinder) (anchor=(-40.0, -8.0))
+HOST_TEST_PASS: surface_frame consistent with surface_transform (cylinder)
+HOST_TEST_PASS: adapter host_path_data structure stable (cylinder)
+HOST_TEST_PASS: adapter occupancy_query stable empty (cylinder)
+HOST_TEST_PASS: surface_transform parity (dome_cylinder) (anchor=(0.0, 0.0))
+HOST_TEST_PASS: surface_transform parity (dome_cylinder) (anchor=(0.6, -1.1))
+HOST_TEST_PASS: surface_transform parity (dome_cylinder) (anchor=(-1.7, 2.2))
+HOST_TEST_PASS: surface_transform parity (dome_cylinder) (anchor=(2.9, 0.4))
+HOST_TEST_PASS: surface_raycast matches ray_anchor (dome_cylinder)
+HOST_TEST_PASS: pure data raycast parity (dome_cylinder)
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(0.0, 0.0) b=(0.0, 0.0))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(0.0, 0.0) b=(0.6, -1.1))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(0.0, 0.0) b=(-1.7, 2.2))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(0.0, 0.0) b=(2.9, 0.4))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(0.6, -1.1) b=(0.0, 0.0))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(0.6, -1.1) b=(0.6, -1.1))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(0.6, -1.1) b=(-1.7, 2.2))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(0.6, -1.1) b=(2.9, 0.4))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(-1.7, 2.2) b=(0.0, 0.0))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(-1.7, 2.2) b=(0.6, -1.1))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(-1.7, 2.2) b=(-1.7, 2.2))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(-1.7, 2.2) b=(2.9, 0.4))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(2.9, 0.4) b=(0.0, 0.0))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(2.9, 0.4) b=(0.6, -1.1))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(2.9, 0.4) b=(-1.7, 2.2))
+HOST_TEST_PASS: surface_distance parity (dome_cylinder) (a=(2.9, 0.4) b=(2.9, 0.4))
+HOST_TEST_PASS: clamp_anchor parity (dome_cylinder) (anchor=(0.0, 0.0))
+HOST_TEST_PASS: clamp_anchor parity (dome_cylinder) (anchor=(0.6, -1.1))
+HOST_TEST_PASS: clamp_anchor parity (dome_cylinder) (anchor=(-1.7, 2.2))
+HOST_TEST_PASS: clamp_anchor parity (dome_cylinder) (anchor=(2.9, 0.4))
+HOST_TEST_PASS: clamp_anchor parity (dome_cylinder) (anchor=(40.0, 8.0))
+HOST_TEST_PASS: clamp_anchor parity (dome_cylinder) (anchor=(-40.0, -8.0))
+HOST_TEST_PASS: surface_frame consistent with surface_transform (dome_cylinder)
+HOST_TEST_PASS: adapter host_path_data structure stable (dome_cylinder)
+HOST_TEST_PASS: adapter occupancy_query stable empty (dome_cylinder)
+HOST_TEST_PASS: validator lists all missing members (count=8)
+ERROR: PCGSurfaceHostData.register_component: empty component_id
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] register_component (res://addons/pcg_shared/pcg_surface_host_data.gd:160)
+       [1] _check_negative_paths (res://scripts/tests/surface_host_test_runner.gd:244)
+       [2] run (res://scripts/tests/surface_host_test_runner.gd:41)
+       [3] _check_adapter_parity (res://scripts/tests/surface_host_test_runner.gd:235)
+HOST_TEST_PASS: empty component_id rejected
+ERROR: PCGSurfaceHost.surface_transform: host  does not implement the contract
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] surface_transform (res://addons/pcg_shared/pcg_surface_host.gd:30)
+       [1] _check_negative_paths (res://scripts/tests/surface_host_test_runner.gd:248)
+       [2] run (res://scripts/tests/surface_host_test_runner.gd:41)
+       [3] _check_adapter_parity (res://scripts/tests/surface_host_test_runner.gd:235)
+HOST_TEST_PASS: base surface_transform fails safe to identity
+ERROR: PCGSurfaceHost.surface_raycast: host  does not implement the contract
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] surface_raycast (res://addons/pcg_shared/pcg_surface_host.gd:42)
+       [1] _check_negative_paths (res://scripts/tests/surface_host_test_runner.gd:250)
+       [2] run (res://scripts/tests/surface_host_test_runner.gd:41)
+       [3] _check_adapter_parity (res://scripts/tests/surface_host_test_runner.gd:235)
+HOST_TEST_PASS: base surface_raycast fails safe to empty
+HOST_TEST_PASS: missed ray returns empty dictionary
+HOST_TEST_CHECKS: 130 run, 0 failed
+HOST_TEST_RESULT: PASS
+GATE_PASS: surface host contract
+
+GATE_BEGIN: asset task window UI
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+ASSET_TASK_BEGIN: asset task window UI/integration checks
+ASSET_TASK_CHECK_PASS: editor_plugin.gd compiles with asset task integration (res://addons/surface_components/editor_plugin.gd)
+ASSET_TASK_CHECK_PASS: editor_plugin.gd exposes open_asset_tasks()
+ASSET_TASK_CHECK_PASS: dock.gd adds 资产任务 button (res://addons/surface_components/dock.gd)
+ASSET_TASK_CHECK_PASS: window title is 规范标题 (L0 资产任务与精度规范)
+ASSET_TASK_CHECK_PASS: shared PCGAssetTaskStore instance created
+ASSET_TASK_CHECK_PASS: task selector/new/save/reload/validation controls exist
+ASSET_TASK_CHECK_PASS: form covers required task fields
+ASSET_TASK_CHECK_PASS: window popup visible after open_tasks
+ASSET_TASK_CHECK_PASS: empty task directory lists zero tasks
+ASSET_TASK_CHECK_PASS: 新建 creates a draft PCGAssetTask
+ASSET_TASK_CHECK_PASS: new task starts as draft
+ASSET_TASK_CHECK_PASS: blank task shows validation errors when assigned
+ASSET_TASK_CHECK_PASS: save blocked while validation errors exist
+ASSET_TASK_CHECK_PASS: complete form passes draft validation
+ASSET_TASK_CHECK_PASS: save enabled after draft validation passes
+ASSET_TASK_CHECK_PASS: complete AI task passes assignment validation (status=assigned)
+ASSET_TASK_CHECK_PASS: 保存成功状态反馈 (已保存: user://pcg_asset_task_window_test/task_ui_arch_door.task.json)
+ASSET_TASK_CHECK_PASS: task file written to temp directory (user://pcg_asset_task_window_test)
+ASSET_TASK_CHECK_PASS: store lists one saved task (count=1)
+ASSET_TASK_CHECK_PASS: saved task round-trips budgets and texture size
+ASSET_TASK_CHECK_PASS: saved task round-trips purpose and interface requirements
+ASSET_TASK_CHECK_PASS: 重开 restores saved values and discards edits
+ASSET_TASK_CHECK_PASS: 重开 reloads task object from disk
+ASSET_TASK_CHECK_PASS: second task grows store listing (count=2)
+ASSET_TASK_CHECK_PASS: reopened window lists both saved tasks (items=2)
+ASSET_TASK_CHECK_PASS: bad task file written
+ASSET_TASK_CHECK_PASS: bad file does not silently drop valid tasks (valid=2)
+ASSET_TASK_CHECKS: 27 run, 0 failed
+ASSET_TASK_RESULT: PASS
+GATE_PASS: asset task window UI
+
+GATE_BEGIN: shared addon cold-import spike
+
+SPIKE_BEGIN: surface_component
+SPIKE_BEGIN: shared addon single-source check
+SPIKE_CHECK_PASS: profile script reachable (res://addons/pcg_shared/shared_material_profile.gd)
+SPIKE_CHECK_PASS: codec script reachable (res://addons/pcg_shared/material_profile_codec.gd)
+SPIKE_CHECK_PASS: codec class path points at shared addon (res://addons/pcg_shared/material_profile_codec.gd)
+SPIKE_CHECK_PASS: profile class path points at shared addon (res://addons/pcg_shared/shared_material_profile.gd)
+SPIKE_CHECK_PASS: profile class registered exactly once (hits=1)
+SPIKE_CHECK_PASS: codec class registered exactly once (hits=1)
+SPIKE_CHECK_PASS: PCGMaterialProfile class path points at shared addon (res://addons/pcg_shared/material_profile.gd)
+SPIKE_CHECK_PASS: PCGMaterialProfile registered exactly once (hits=1)
+SPIKE_CHECK_PASS: PCGMeshChunkBaker class path points at shared addon (res://addons/pcg_shared/mesh_chunk_baker.gd)
+SPIKE_CHECK_PASS: PCGMeshChunkBaker registered exactly once (hits=1)
+SPIKE_CHECK_PASS: PipeMeshBuilder class path points at shared addon (res://addons/pcg_shared/pipe_mesh_builder.gd)
+SPIKE_CHECK_PASS: PipeMeshBuilder registered exactly once (hits=1)
+SPIKE_CHECK_PASS: SurfacePathSolver class path points at shared addon (res://addons/pcg_shared/surface_path_solver.gd)
+SPIKE_CHECK_PASS: SurfacePathSolver registered exactly once (hits=1)
+SPIKE_CHECK_PASS: PCGTextureSlotPanel class path points at shared addon (res://addons/pcg_shared/texture_slot_panel.gd)
+SPIKE_CHECK_PASS: PCGTextureSlotPanel registered exactly once (hits=1)
+SPIKE_CHECK_PASS: no duplicate class_name in project (46 scripts scanned)
+SPIKE_CHECK_PASS: no duplicate uid in project (50 uid files scanned)
+SPIKE_CHECK_PASS: shared profile uid resolves to addon path (uid://ysemtibtr5hg9)
+SPIKE_DETAIL: autoloads = MaterialLibrary
+SPIKE_CHECK_PASS: no autoload name clash with shared classes
+SPIKE_CHECK_PASS: plugin.cfg parseable (PCG Shared Kernel (Spike))
+SPIKE_DETAIL: editor plugins enabled = surface_components
+SPIKE_CHECK_PASS: profile script compiles
+SPIKE_CHECK_PASS: valid profile passes validate()
+SPIKE_CHECK_PASS: invalid profile fails validate()
+SPIKE_CHECK_PASS: build_material() reflects profile fields
+SPIKE_CHECK_PASS: to_dict/from_dict round-trip
+SPIKE_CHECK_PASS: future format_version rejected
+SPIKE_CHECK_PASS: codec script compiles (global classes registered)
+SPIKE_CHECK_PASS: codec save_profile (user://pcg_shared_spike_profile.tres err=0)
+SPIKE_CHECK_PASS: codec load round-trip identical
+SPIKE_CHECK_PASS: semantic hash deterministic for identical profiles
+SPIKE_CHECK_PASS: semantic hash changes with content
+SPIKE_CHECK_PASS: no local copy of migrated scripts
+SPIKE_CHECK_PASS: MaterialLibrary autoload points at shared addon (*res://addons/pcg_shared/material_library.gd)
+SPIKE_CHECK_PASS: shared material library compiles (res://addons/pcg_shared/material_library.gd)
+SPIKE_CHECK_PASS: shared PCGMaterialProfile loads
+SPIKE_CHECK_PASS: shared profile API intact
+SPIKE_CHECK_PASS: existing .tres resolves shared profile (res://assets/materials/round_window_frame.tres)
+SPIKE_CHECK_PASS: existing .tres resolves shared profile (res://assets/materials/square_window_frame.tres)
+SPIKE_CHECK_PASS: existing .tres resolves shared profile (res://assets/materials/round_window_glass.tres)
+SPIKE_CHECK_PASS: existing .tres resolves shared profile (res://assets/materials/square_window_glass.tres)
+SPIKE_BEGIN: core kernel checks
+SPIKE_KERNEL_CHECK_PASS: stable id: generated ids validate (pattern [a-z0-9_-]+)
+SPIKE_KERNEL_CHECK_PASS: stable id: generated ids unique (64 samples)
+SPIKE_KERNEL_CHECK_PASS: stable id: audit/display fields excluded from signature
+SPIKE_KERNEL_CHECK_PASS: stable id: to_dict/from_dict round-trip
+SPIKE_KERNEL_CHECK_PASS: stable id: invalid id rejected without half-built state (invalid field: id "Bad ID")
+SPIKE_KERNEL_CHECK_PASS: stable id: future id schema rejected (id schema too new: 99 > 1)
+SPIKE_KERNEL_CHECK_PASS: migration: envelope survives stepwise migration (format_version=3)
+SPIKE_KERNEL_CHECK_PASS: migration: rename applied exactly once
+SPIKE_KERNEL_CHECK_PASS: migration: appended fields have defaults
+SPIKE_KERNEL_CHECK_PASS: migration: golden regression hash stable (571cf140f31af906)
+SPIKE_KERNEL_CHECK_PASS: migration: future format_version rejected with readable error (format_version 999 is newer than supported version 3; refusi)
+SPIKE_KERNEL_CHECK_PASS: migration: missing step reports exact version gap (no migration registered from format_version 2 to 3)
+SPIKE_KERNEL_CHECK_PASS: migration: validation failure lists field errors, no half document (payload.kind must be wall or window)
+SPIKE_KERNEL_CHECK_PASS: migration: current-version document round-trips
+SPIKE_KERNEL_CHECK_PASS: canonical: 1e-5 quantization boundary (T7) (1.00000 / 1.00000 / 1.00001)
+SPIKE_KERNEL_CHECK_PASS: canonical: floats are fixed-point text, no %g/exponent
+SPIKE_KERNEL_CHECK_PASS: canonical: dictionary keys sorted, insertion order irrelevant
+SPIKE_KERNEL_CHECK_PASS: canonical: array order preserved
+SPIKE_KERNEL_CHECK_PASS: canonical: array length recorded
+SPIKE_KERNEL_CHECK_PASS: canonical: nested float quantized to 1e-5
+SPIKE_KERNEL_CHECK_PASS: canonical: semantic hash ignores sub-1e-5 float noise
+SPIKE_KERNEL_CHECK_PASS: signature: identical inputs give identical cache key (T6 hit)
+SPIKE_KERNEL_CHECK_PASS: signature: param change invalidates digest
+SPIKE_KERNEL_CHECK_PASS: signature: host geometry change invalidates digest
+SPIKE_KERNEL_CHECK_PASS: signature: seed digest written only when random used, scope-sensitive
+SPIKE_KERNEL_CHECK_PASS: signature: to_dict/from_dict round-trip
+SPIKE_KERNEL_CHECK_PASS: signature: recalculate deterministic
+SPIKE_KERNEL_CHECK_PASS: rng: derivation v1 golden seeds (SHA256 first 8 bytes)
+SPIKE_KERNEL_CHECK_PASS: rng: 1000 repeated draws deterministic (T4)
+SPIKE_KERNEL_CHECK_PASS: rng: branch A activity does not change branch B sequence
+SPIKE_KERNEL_CHECK_PASS: rng: normalized scope key stable regardless of insertion order
+SPIKE_KERNEL_CHECK_PASS: rng: appended scopes do not alter existing stream derivation
+SPIKE_KERNEL_CHECK_PASS: rng: purpose values extend by append, unknown purpose rejected
+SPIKE_KERNEL_CHECK_PASS: rng: master seed, derivation version and scope recoverable
+SPIKE_KERNEL_CHECK_PASS: atomic: first save commits
+SPIKE_KERNEL_CHECK_PASS: atomic: formal file content exact
+SPIKE_KERNEL_CHECK_PASS: atomic: previous formal kept as .bak1 before replace
+SPIKE_KERNEL_CHECK_PASS: atomic: failed commit never falls back to non-atomic overwrite
+SPIKE_KERNEL_CHECK_PASS: atomic: injected interruption leaves formal intact with temp residue
+SPIKE_KERNEL_CHECK_PASS: atomic: stale temp cleaned without touching formal data (T3)
+SPIKE_KERNEL_CHECK_PASS: atomic: corrupt formal triggers recovery prompt, no silent overwrite
+SPIKE_KERNEL_CHECK_PASS: atomic: user-confirmed restore returns last consistent data
+SPIKE_KERNEL_CHECK_PASS: atomic: healthy file needs no action
+SPIKE_CHECKS: 84 run, 0 failed
+SPIKE_RESULT: PASS
+SPIKE_PASS: surface_component
+
+SPIKE_BEGIN: pipeweaver
+SPIKE_BEGIN: shared addon single-source check
+SPIKE_CHECK_PASS: profile script reachable (res://addons/pcg_shared/shared_material_profile.gd)
+SPIKE_CHECK_PASS: codec script reachable (res://addons/pcg_shared/material_profile_codec.gd)
+SPIKE_CHECK_PASS: codec class path points at shared addon (res://addons/pcg_shared/material_profile_codec.gd)
+SPIKE_CHECK_PASS: profile class path points at shared addon (res://addons/pcg_shared/shared_material_profile.gd)
+SPIKE_CHECK_PASS: profile class registered exactly once (hits=1)
+SPIKE_CHECK_PASS: codec class registered exactly once (hits=1)
+SPIKE_CHECK_PASS: PCGMaterialProfile class path points at shared addon (res://addons/pcg_shared/material_profile.gd)
+SPIKE_CHECK_PASS: PCGMaterialProfile registered exactly once (hits=1)
+SPIKE_CHECK_PASS: PCGMeshChunkBaker class path points at shared addon (res://addons/pcg_shared/mesh_chunk_baker.gd)
+SPIKE_CHECK_PASS: PCGMeshChunkBaker registered exactly once (hits=1)
+SPIKE_CHECK_PASS: PipeMeshBuilder class path points at shared addon (res://addons/pcg_shared/pipe_mesh_builder.gd)
+SPIKE_CHECK_PASS: PipeMeshBuilder registered exactly once (hits=1)
+SPIKE_CHECK_PASS: SurfacePathSolver class path points at shared addon (res://addons/pcg_shared/surface_path_solver.gd)
+SPIKE_CHECK_PASS: SurfacePathSolver registered exactly once (hits=1)
+SPIKE_CHECK_PASS: PCGTextureSlotPanel class path points at shared addon (res://addons/pcg_shared/texture_slot_panel.gd)
+SPIKE_CHECK_PASS: PCGTextureSlotPanel registered exactly once (hits=1)
+SPIKE_CHECK_PASS: no duplicate class_name in project (30 scripts scanned)
+SPIKE_CHECK_PASS: no duplicate uid in project (31 uid files scanned)
+SPIKE_CHECK_PASS: shared profile uid resolves to addon path (uid://ysemtibtr5hg9)
+SPIKE_DETAIL: autoloads = MaterialLibrary
+SPIKE_CHECK_PASS: no autoload name clash with shared classes
+SPIKE_CHECK_PASS: plugin.cfg parseable (PCG Shared Kernel (Spike))
+SPIKE_DETAIL: editor plugins enabled = 
+SPIKE_CHECK_PASS: profile script compiles
+SPIKE_CHECK_PASS: valid profile passes validate()
+SPIKE_CHECK_PASS: invalid profile fails validate()
+SPIKE_CHECK_PASS: build_material() reflects profile fields
+SPIKE_CHECK_PASS: to_dict/from_dict round-trip
+SPIKE_CHECK_PASS: future format_version rejected
+SPIKE_CHECK_PASS: codec script compiles (global classes registered)
+SPIKE_CHECK_PASS: codec save_profile (user://pcg_shared_spike_profile.tres err=0)
+SPIKE_CHECK_PASS: codec load round-trip identical
+SPIKE_CHECK_PASS: semantic hash deterministic for identical profiles
+SPIKE_CHECK_PASS: semantic hash changes with content
+SPIKE_CHECK_PASS: no local copy of migrated scripts
+SPIKE_CHECK_PASS: MaterialLibrary autoload points at shared addon (*res://addons/pcg_shared/material_library.gd)
+SPIKE_CHECK_PASS: shared material library compiles (res://addons/pcg_shared/material_library.gd)
+SPIKE_CHECK_PASS: shared PCGMaterialProfile loads
+SPIKE_CHECK_PASS: shared profile API intact
+SPIKE_CHECK_PASS: existing .tres resolves shared profile (res://assets/pipe_material.tres)
+SPIKE_BEGIN: core kernel checks
+SPIKE_KERNEL_CHECK_PASS: stable id: generated ids validate (pattern [a-z0-9_-]+)
+SPIKE_KERNEL_CHECK_PASS: stable id: generated ids unique (64 samples)
+SPIKE_KERNEL_CHECK_PASS: stable id: audit/display fields excluded from signature
+SPIKE_KERNEL_CHECK_PASS: stable id: to_dict/from_dict round-trip
+SPIKE_KERNEL_CHECK_PASS: stable id: invalid id rejected without half-built state (invalid field: id "Bad ID")
+SPIKE_KERNEL_CHECK_PASS: stable id: future id schema rejected (id schema too new: 99 > 1)
+SPIKE_KERNEL_CHECK_PASS: migration: envelope survives stepwise migration (format_version=3)
+SPIKE_KERNEL_CHECK_PASS: migration: rename applied exactly once
+SPIKE_KERNEL_CHECK_PASS: migration: appended fields have defaults
+SPIKE_KERNEL_CHECK_PASS: migration: golden regression hash stable (571cf140f31af906)
+SPIKE_KERNEL_CHECK_PASS: migration: future format_version rejected with readable error (format_version 999 is newer than supported version 3; refusi)
+SPIKE_KERNEL_CHECK_PASS: migration: missing step reports exact version gap (no migration registered from format_version 2 to 3)
+SPIKE_KERNEL_CHECK_PASS: migration: validation failure lists field errors, no half document (payload.kind must be wall or window)
+SPIKE_KERNEL_CHECK_PASS: migration: current-version document round-trips
+SPIKE_KERNEL_CHECK_PASS: canonical: 1e-5 quantization boundary (T7) (1.00000 / 1.00000 / 1.00001)
+SPIKE_KERNEL_CHECK_PASS: canonical: floats are fixed-point text, no %g/exponent
+SPIKE_KERNEL_CHECK_PASS: canonical: dictionary keys sorted, insertion order irrelevant
+SPIKE_KERNEL_CHECK_PASS: canonical: array order preserved
+SPIKE_KERNEL_CHECK_PASS: canonical: array length recorded
+SPIKE_KERNEL_CHECK_PASS: canonical: nested float quantized to 1e-5
+SPIKE_KERNEL_CHECK_PASS: canonical: semantic hash ignores sub-1e-5 float noise
+SPIKE_KERNEL_CHECK_PASS: signature: identical inputs give identical cache key (T6 hit)
+SPIKE_KERNEL_CHECK_PASS: signature: param change invalidates digest
+SPIKE_KERNEL_CHECK_PASS: signature: host geometry change invalidates digest
+SPIKE_KERNEL_CHECK_PASS: signature: seed digest written only when random used, scope-sensitive
+SPIKE_KERNEL_CHECK_PASS: signature: to_dict/from_dict round-trip
+SPIKE_KERNEL_CHECK_PASS: signature: recalculate deterministic
+SPIKE_KERNEL_CHECK_PASS: rng: derivation v1 golden seeds (SHA256 first 8 bytes)
+SPIKE_KERNEL_CHECK_PASS: rng: 1000 repeated draws deterministic (T4)
+SPIKE_KERNEL_CHECK_PASS: rng: branch A activity does not change branch B sequence
+SPIKE_KERNEL_CHECK_PASS: rng: normalized scope key stable regardless of insertion order
+SPIKE_KERNEL_CHECK_PASS: rng: appended scopes do not alter existing stream derivation
+SPIKE_KERNEL_CHECK_PASS: rng: purpose values extend by append, unknown purpose rejected
+SPIKE_KERNEL_CHECK_PASS: rng: master seed, derivation version and scope recoverable
+SPIKE_KERNEL_CHECK_PASS: atomic: first save commits
+SPIKE_KERNEL_CHECK_PASS: atomic: formal file content exact
+SPIKE_KERNEL_CHECK_PASS: atomic: previous formal kept as .bak1 before replace
+SPIKE_KERNEL_CHECK_PASS: atomic: failed commit never falls back to non-atomic overwrite
+SPIKE_KERNEL_CHECK_PASS: atomic: injected interruption leaves formal intact with temp residue
+SPIKE_KERNEL_CHECK_PASS: atomic: stale temp cleaned without touching formal data (T3)
+SPIKE_KERNEL_CHECK_PASS: atomic: corrupt formal triggers recovery prompt, no silent overwrite
+SPIKE_KERNEL_CHECK_PASS: atomic: user-confirmed restore returns last consistent data
+SPIKE_KERNEL_CHECK_PASS: atomic: healthy file needs no action
+SPIKE_CHECKS: 81 run, 0 failed
+SPIKE_RESULT: PASS
+SPIKE_PASS: pipeweaver
+
+SPIKE_BEGIN: third_party_consumer
+SPIKE_BEGIN: shared addon single-source check
+SPIKE_CHECK_PASS: profile script reachable (res://addons/pcg_shared/shared_material_profile.gd)
+SPIKE_CHECK_PASS: codec script reachable (res://addons/pcg_shared/material_profile_codec.gd)
+SPIKE_CHECK_PASS: codec class path points at shared addon (res://addons/pcg_shared/material_profile_codec.gd)
+SPIKE_CHECK_PASS: profile class path points at shared addon (res://addons/pcg_shared/shared_material_profile.gd)
+SPIKE_CHECK_PASS: profile class registered exactly once (hits=1)
+SPIKE_CHECK_PASS: codec class registered exactly once (hits=1)
+SPIKE_CHECK_PASS: PCGMaterialProfile class path points at shared addon (res://addons/pcg_shared/material_profile.gd)
+SPIKE_CHECK_PASS: PCGMaterialProfile registered exactly once (hits=1)
+SPIKE_CHECK_PASS: PCGMeshChunkBaker class path points at shared addon (res://addons/pcg_shared/mesh_chunk_baker.gd)
+SPIKE_CHECK_PASS: PCGMeshChunkBaker registered exactly once (hits=1)
+SPIKE_CHECK_PASS: PipeMeshBuilder class path points at shared addon (res://addons/pcg_shared/pipe_mesh_builder.gd)
+SPIKE_CHECK_PASS: PipeMeshBuilder registered exactly once (hits=1)
+SPIKE_CHECK_PASS: SurfacePathSolver class path points at shared addon (res://addons/pcg_shared/surface_path_solver.gd)
+SPIKE_CHECK_PASS: SurfacePathSolver registered exactly once (hits=1)
+SPIKE_CHECK_PASS: PCGTextureSlotPanel class path points at shared addon (res://addons/pcg_shared/texture_slot_panel.gd)
+SPIKE_CHECK_PASS: PCGTextureSlotPanel registered exactly once (hits=1)
+SPIKE_CHECK_PASS: no duplicate class_name in project (27 scripts scanned)
+SPIKE_CHECK_PASS: no duplicate uid in project (27 uid files scanned)
+SPIKE_CHECK_PASS: shared profile uid resolves to addon path (uid://ysemtibtr5hg9)
+SPIKE_DETAIL: autoloads = 
+SPIKE_CHECK_PASS: no autoload name clash with shared classes
+SPIKE_CHECK_PASS: plugin.cfg parseable (PCG Shared Kernel (Spike))
+SPIKE_DETAIL: editor plugins enabled = 
+SPIKE_CHECK_PASS: profile script compiles
+SPIKE_CHECK_PASS: valid profile passes validate()
+SPIKE_CHECK_PASS: invalid profile fails validate()
+SPIKE_CHECK_PASS: build_material() reflects profile fields
+SPIKE_CHECK_PASS: to_dict/from_dict round-trip
+SPIKE_CHECK_PASS: future format_version rejected
+SPIKE_CHECK_PASS: codec script compiles (global classes registered)
+SPIKE_CHECK_PASS: codec save_profile (user://pcg_shared_spike_profile.tres err=0)
+SPIKE_CHECK_PASS: codec load round-trip identical
+SPIKE_CHECK_PASS: semantic hash deterministic for identical profiles
+SPIKE_CHECK_PASS: semantic hash changes with content
+SPIKE_CHECK_PASS: no local copy of migrated scripts
+SPIKE_CHECK_PASS: consumer isolation: no MaterialLibrary autoload present
+SPIKE_CHECK_PASS: shared PCGMaterialProfile loads
+SPIKE_CHECK_PASS: shared profile API intact
+SPIKE_BEGIN: core kernel checks
+SPIKE_KERNEL_CHECK_PASS: stable id: generated ids validate (pattern [a-z0-9_-]+)
+SPIKE_KERNEL_CHECK_PASS: stable id: generated ids unique (64 samples)
+SPIKE_KERNEL_CHECK_PASS: stable id: audit/display fields excluded from signature
+SPIKE_KERNEL_CHECK_PASS: stable id: to_dict/from_dict round-trip
+SPIKE_KERNEL_CHECK_PASS: stable id: invalid id rejected without half-built state (invalid field: id "Bad ID")
+SPIKE_KERNEL_CHECK_PASS: stable id: future id schema rejected (id schema too new: 99 > 1)
+SPIKE_KERNEL_CHECK_PASS: migration: envelope survives stepwise migration (format_version=3)
+SPIKE_KERNEL_CHECK_PASS: migration: rename applied exactly once
+SPIKE_KERNEL_CHECK_PASS: migration: appended fields have defaults
+SPIKE_KERNEL_CHECK_PASS: migration: golden regression hash stable (571cf140f31af906)
+SPIKE_KERNEL_CHECK_PASS: migration: future format_version rejected with readable error (format_version 999 is newer than supported version 3; refusi)
+SPIKE_KERNEL_CHECK_PASS: migration: missing step reports exact version gap (no migration registered from format_version 2 to 3)
+SPIKE_KERNEL_CHECK_PASS: migration: validation failure lists field errors, no half document (payload.kind must be wall or window)
+SPIKE_KERNEL_CHECK_PASS: migration: current-version document round-trips
+SPIKE_KERNEL_CHECK_PASS: canonical: 1e-5 quantization boundary (T7) (1.00000 / 1.00000 / 1.00001)
+SPIKE_KERNEL_CHECK_PASS: canonical: floats are fixed-point text, no %g/exponent
+SPIKE_KERNEL_CHECK_PASS: canonical: dictionary keys sorted, insertion order irrelevant
+SPIKE_KERNEL_CHECK_PASS: canonical: array order preserved
+SPIKE_KERNEL_CHECK_PASS: canonical: array length recorded
+SPIKE_KERNEL_CHECK_PASS: canonical: nested float quantized to 1e-5
+SPIKE_KERNEL_CHECK_PASS: canonical: semantic hash ignores sub-1e-5 float noise
+SPIKE_KERNEL_CHECK_PASS: signature: identical inputs give identical cache key (T6 hit)
+SPIKE_KERNEL_CHECK_PASS: signature: param change invalidates digest
+SPIKE_KERNEL_CHECK_PASS: signature: host geometry change invalidates digest
+SPIKE_KERNEL_CHECK_PASS: signature: seed digest written only when random used, scope-sensitive
+SPIKE_KERNEL_CHECK_PASS: signature: to_dict/from_dict round-trip
+SPIKE_KERNEL_CHECK_PASS: signature: recalculate deterministic
+SPIKE_KERNEL_CHECK_PASS: rng: derivation v1 golden seeds (SHA256 first 8 bytes)
+SPIKE_KERNEL_CHECK_PASS: rng: 1000 repeated draws deterministic (T4)
+SPIKE_KERNEL_CHECK_PASS: rng: branch A activity does not change branch B sequence
+SPIKE_KERNEL_CHECK_PASS: rng: normalized scope key stable regardless of insertion order
+SPIKE_KERNEL_CHECK_PASS: rng: appended scopes do not alter existing stream derivation
+SPIKE_KERNEL_CHECK_PASS: rng: purpose values extend by append, unknown purpose rejected
+SPIKE_KERNEL_CHECK_PASS: rng: master seed, derivation version and scope recoverable
+SPIKE_KERNEL_CHECK_PASS: atomic: first save commits
+SPIKE_KERNEL_CHECK_PASS: atomic: formal file content exact
+SPIKE_KERNEL_CHECK_PASS: atomic: previous formal kept as .bak1 before replace
+SPIKE_KERNEL_CHECK_PASS: atomic: failed commit never falls back to non-atomic overwrite
+SPIKE_KERNEL_CHECK_PASS: atomic: injected interruption leaves formal intact with temp residue
+SPIKE_KERNEL_CHECK_PASS: atomic: stale temp cleaned without touching formal data (T3)
+SPIKE_KERNEL_CHECK_PASS: atomic: corrupt formal triggers recovery prompt, no silent overwrite
+SPIKE_KERNEL_CHECK_PASS: atomic: user-confirmed restore returns last consistent data
+SPIKE_KERNEL_CHECK_PASS: atomic: healthy file needs no action
+SPIKE_CHECKS: 79 run, 0 failed
+SPIKE_RESULT: PASS
+SPIKE_PASS: third_party_consumer
+
+SPIKE_PASS: all three consumers load the shared addon from a single source
+SPIKE_NOTE: 三个消费者均在一次性副本中完成 .godot 清理重导入；原工程缓存未动
+GATE_PASS: shared addon cold-import spike
+
+GATE_PASS: all headless checks passed
+GATE_NOTE: graphical input, screenshots and performance require the documented local graphical run

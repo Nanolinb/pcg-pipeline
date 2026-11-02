@@ -46,7 +46,8 @@ run_consumer() {
 		return
 	fi
 	mkdir -p "$link_dir"
-	ln -sfn "$link_target" "$link_dir/pcg_shared"
+	rm -rf "$link_dir/pcg_shared"
+	ln -s "$link_target" "$link_dir/pcg_shared"
 
 	# 清理缓存后的重导入（在一次性副本中进行）。
 	if ! "$GODOT_BIN" --headless --path "$proj" --import >"$proj/import.log" 2>&1; then
@@ -69,9 +70,9 @@ run_consumer() {
 	fi
 }
 
-run_consumer "surface_component" "$ROOT_DIR" "$TMP_DIR/surface_component/addons" "$ROOT_DIR/shared/addons/pcg_shared"
-run_consumer "pipeweaver" "$ROOT_DIR/PipeWeaver" "$TMP_DIR/pipeweaver/addons" "$ROOT_DIR/shared/addons/pcg_shared"
-run_consumer "third_party_consumer" "$ROOT_DIR/spike/base05_shared_addon/consumer" "$TMP_DIR/third_party_consumer/addons" "$ROOT_DIR/shared/addons/pcg_shared"
+run_consumer "surface_component" "$ROOT_DIR" "$TMP_DIR/surface_component/addons" "$ROOT_DIR/addons/pcg_shared"
+run_consumer "pipeweaver" "$ROOT_DIR/PipeWeaver" "$TMP_DIR/pipeweaver/addons" "$ROOT_DIR/addons/pcg_shared"
+run_consumer "third_party_consumer" "$ROOT_DIR/spike/base05_shared_addon/consumer" "$TMP_DIR/third_party_consumer/addons" "$ROOT_DIR/addons/pcg_shared"
 
 if [[ "$failures" -ne 0 ]]; then
 	printf '\nSPIKE_FAIL: %d consumer(s) failed\n' "$failures" >&2

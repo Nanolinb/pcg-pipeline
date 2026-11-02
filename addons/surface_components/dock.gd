@@ -60,6 +60,9 @@ func setup(controller: EditorPlugin, definitions: Array[PCGComponentDefinition])
 	merge_selected_button = _add_button("合并选中组件", plugin.merge_selected)
 	merge_all_button = _add_button("全部合并", plugin.merge_all)
 	delete_button = _add_button("删除选中组件", plugin.delete_selected)
+	_add_heading("资产任务")
+	if plugin.has_method("open_asset_tasks"):
+		_add_button("资产任务", plugin.open_asset_tasks)
 
 func _add_heading(text: String) -> void:
 	var separator := HSeparator.new()

@@ -44,7 +44,7 @@
 - 新功能且向后兼容时提升次版本；缺陷修复提升修订号；不兼容变更提升主版本。
 - 长期建筑群编辑系统按 `docs/roadmap.md` 的集成里程碑执行；`0.x` 阶段的数据格式不兼容以格式版本、迁移器和旧样本回归管理，`v1.0.0` 后恢复常规主版本规则。
 - v0.14 的稳定 ID、命令、随机流、宿主接口、重建签名和原子保存遵循 `docs/core_contracts.md`。
-- 共享核心唯一物理来源为 `shared/addons/pcg_shared/`，各工程经 `addons/pcg_shared` 链接使用；禁止双向复制同步，禁止合并两个主程序。
+- 共享核心唯一物理来源为根工程 `addons/pcg_shared/`，PipeWeaver 与测试消费者经各自 `addons/pcg_shared` 链接使用；禁止双向复制同步，禁止合并两个主程序。
 - 每次需求或缺陷修改同步更新本文件与 `docs/changelog.md`。
 - 每次修改单独提交，提交信息采用 `type(scope): summary`，不得在提交中混入无关工程文件。
 

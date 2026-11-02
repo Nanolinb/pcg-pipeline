@@ -7,6 +7,7 @@ const FusedWall = preload("res://scripts/fused_wall.gd")
 const SurfaceComponent = preload("res://scripts/surface_component.gd")
 const OverlapSolver = preload("res://scripts/overlap_solver.gd")
 const Dock = preload("res://addons/surface_components/dock.gd")
+const AssetTaskWindow = preload("res://addons/surface_components/asset_task_window.gd")
 
 var catalog := PCGComponentCatalog.new()
 var dock: VBoxContainer
@@ -28,6 +29,7 @@ var command_history: PCGEditCommandHistory
 var command_targets: Dictionary = {}  # StringName -> PCGSurfaceComponent（会话内 target 解析）
 var drag_command_target: StringName = &""
 var drag_merge_seq: int = 0
+var asset_task_window: Window
 
 func _ready() -> void:
 	catalog.load_from("res://assets/components")
@@ -43,7 +45,15 @@ func _exit_tree() -> void:
 	_cancel_ghost()
 	if is_instance_valid(dock):
 		dock.queue_free()
+	if is_instance_valid(asset_task_window):
+		asset_task_window.queue_free()
 	EditorInterface.get_selection().selection_changed.disconnect(_on_editor_selection_changed)
+
+func open_asset_tasks() -> void:
+	if asset_task_window == null or not is_instance_valid(asset_task_window):
+		asset_task_window = AssetTaskWindow.new()
+		EditorInterface.get_base_control().add_child(asset_task_window)
+	asset_task_window.open_tasks()
 
 func _handles(object: Object) -> bool:
 	return object is Node3D
