@@ -42,6 +42,16 @@ var base_preview_root: Node3D
 var base_preview_meshes: Array[MeshInstance3D] = []
 var components: Array = []
 
+# v0.14 表面宿主契约（docs/core_contracts.md §4）适配。
+# PCGFusedWall 是平面/圆柱/半球圆柱三种主体的节点适配器：
+# GDScript 单继承下无法同时继承 RefCounted 的 PCGSurfaceHost 契约基类，
+# 因此以结构化方式实现同一组方法，由 PCGSurfaceHost.validate_surface_host() 校验。
+# 下方 surface_* / host_path_data / occupancy_query 全部是薄包装，
+# 语义与既有 ray_anchor / surface_transform 完全一致，既有调用方不受影响。
+# register_component / unregister_component 沿用既有组件节点句柄签名
+# （CSG 融合需要节点引用），是契约签名的适配器扩展。
+var host_id: StringName = &"fused_wall"
+
 func _ready() -> void:
 	name = display_name
 	combiner = CSGCombiner3D.new()
@@ -365,6 +375,32 @@ func surface_distance(a: Vector2, b: Vector2) -> float:
 		arc_difference = minf(arc_difference, circumference - arc_difference)
 		return Vector2(arc_difference, a.y - b.y).length()
 	return a.distance_to(b)
+
+func surface_raycast(origin: Vector3, direction: Vector3) -> Dictionary:
+	return ray_anchor(origin, direction)
+
+func surface_frame(anchor: Vector2) -> Dictionary:
+	var frame_transform := surface_transform(anchor)
+	var frame_basis := frame_transform.basis
+	return {
+		"position": frame_transform.origin,
+		"normal": frame_basis.z.normalized(),
+		"tangent": frame_basis.x.normalized(),
+		"bitangent": frame_basis.y.normalized(),
+		"anchor": anchor,
+		"host": self,
+	}
+
+func host_path_data() -> Dictionary:
+	return {
+		"host_id": host_id,
+		"surface_kind": surface_kind,
+		"coordinate": "surface_local",
+		"paths": [],
+	}
+
+func occupancy_query(_region: Dictionary) -> Array:
+	return []
 
 func screen_rect(camera: Camera3D) -> Rect2:
 	var bounds := wall_size

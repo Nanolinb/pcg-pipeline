@@ -74,6 +74,8 @@ PY
 run_test "project versions" run_versions
 run_logged_test "Surface Component headless smoke" "PCG_SMOKE_TEST_PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s scripts/tests/run_smoke_test.gd
 run_logged_test "PipeWeaver headless smoke" "PIPE_SMOKE_PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR/PipeWeaver" res://tests/pipeweaver_smoke.tscn
+run_logged_test "edit command contract" "EDIT_CMD_RESULT: PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s scripts/tests/run_edit_command_test.gd
+run_logged_test "surface host contract" "HOST_TEST_RESULT: PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s scripts/tests/run_surface_host_test.gd
 run_test "shared addon cold-import spike" "$ROOT_DIR/tools/run_shared_addon_spike.sh"
 
 if [[ "$failures" -ne 0 ]]; then

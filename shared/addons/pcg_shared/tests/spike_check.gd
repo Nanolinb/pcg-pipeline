@@ -9,6 +9,7 @@ const MODULE_PATH := "res://addons/pcg_shared"
 const PROFILE_SCRIPT_PATH := MODULE_PATH + "/shared_material_profile.gd"
 const CODEC_SCRIPT_PATH := MODULE_PATH + "/material_profile_codec.gd"
 const PLUGIN_CFG_PATH := MODULE_PATH + "/plugin.cfg"
+const CORE_CHECKS_SCRIPT_PATH := MODULE_PATH + "/tests/core_kernel_checks.gd"
 const PROFILE_UID_PATH := MODULE_PATH + "/shared_material_profile.gd.uid"
 const PROFILE_CLASS := "PCGSharedMaterialProfile"
 const CODEC_CLASS := "PCGSharedMaterialCodec"
@@ -28,6 +29,7 @@ func _initialize() -> void:
 	_check_profile_api()
 	_check_codec_roundtrip()
 	_check_existing_behavior_unchanged()
+	_check_core_kernel()
 	print("SPIKE_CHECKS: %d run, %d failed" % [checks_run, failures.size()])
 	if failures.is_empty():
 		print("SPIKE_RESULT: PASS")
@@ -208,6 +210,20 @@ func _check_codec_roundtrip() -> void:
 	_record(codec_script.hash_profile(profile) != codec_script.hash_profile(twin),
 		"semantic hash changes with content")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
+
+func _check_core_kernel() -> void:
+	# v0.14 公共内核专项（稳定 ID/迁移/规范化/签名/随机/原子保存）。
+	# 与独立入口 tests/core_kernel_check.gd 共用同一份 PCGCoreKernelChecks。
+	print("SPIKE_BEGIN: core kernel checks")
+	var script: GDScript = load(CORE_CHECKS_SCRIPT_PATH)
+	if script == null:
+		_record(false, "core kernel checks script compiles", CORE_CHECKS_SCRIPT_PATH)
+		return
+	var checks: RefCounted = script.new()
+	var result: Dictionary = checks.run("SPIKE_KERNEL")
+	checks_run += int(result["checks_run"])
+	for failure in result["failures"]:
+		failures.append(String(failure))
 
 func _check_existing_behavior_unchanged() -> void:
 	# 主程序（根工程 / PipeWeaver）：本地 PCGMaterialProfile 与既有 .tres 必须照常加载。

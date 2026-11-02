@@ -22,6 +22,12 @@ var dragging_handle := ""
 var handle_start_mouse := Vector2.ZERO
 var handle_start_angle := 0.0
 var handle_start_scale := 1.0
+# v0.14 编辑命令：所有组件创建/删除/参数编辑经 PCGEditCommandHistory 提交，
+# do/undo/redo 共用 _apply_edit_command 补丁入口；拖动按会话 merge_key 合并。
+var command_history: PCGEditCommandHistory
+var command_targets: Dictionary = {}  # StringName -> PCGSurfaceComponent（会话内 target 解析）
+var drag_command_target: StringName = &""
+var drag_merge_seq: int = 0
 
 func _ready() -> void:
 	catalog.load_from("res://assets/components")
@@ -30,6 +36,7 @@ func _ready() -> void:
 	dock.setup(self, catalog.definitions)
 	EditorInterface.get_inspector().add_child(dock)
 	dock.show()
+	command_history = PCGEditCommandHistory.new(get_undo_redo(), _apply_edit_command)
 	EditorInterface.get_selection().selection_changed.connect(_on_editor_selection_changed)
 
 func _exit_tree() -> void:
@@ -107,12 +114,16 @@ func _forward_3d_gui_input(camera: Camera3D, event: InputEvent) -> int:
 				handle_start_mouse = event.position
 				handle_start_angle = selected.attachment_angle_degrees
 				handle_start_scale = selected.current_scale
+				drag_command_target = _register_command_target(selected)
+				drag_merge_seq += 1
 				selected.set_transition_deferred(true)
 				return AFTER_GUI_INPUT_STOP
 		var component := _pick_component(camera, event.position)
 		if component != null:
 			_select_node(component)
 			dragging_component = true
+			drag_command_target = _register_command_target(component)
+			drag_merge_seq += 1
 			component.set_transition_deferred(true)
 			return AFTER_GUI_INPUT_STOP
 	return AFTER_GUI_INPUT_PASS
@@ -170,22 +181,117 @@ func create_component(id: StringName, host: PCGFusedWall, anchor: Vector2) -> vo
 	if root == null or definition == null:
 		return
 	var component := SurfaceComponent.new()
-	var undo := get_undo_redo()
-	undo.create_action("放置表面组件")
-	undo.add_do_method(self, "_add_component", component, root, definition, host, anchor)
-	undo.add_undo_method(self, "_detach_component", component)
-	undo.commit_action()
+	var command := PCGEditCommand.new()
+	command.command_id = &"放置表面组件"
+	command.target_id = _register_command_target(component)
+	command.scope = {"op": &"create", "definition_id": String(id), "host_path": str(host.get_path())}
+	command.before = {}
+	command.after = {"anchor": host.clamp_anchor(anchor, definition)}
+	command.timestamp_ms = Time.get_ticks_msec()
+	command_history.submit(command)
 	_select_node(component)
 
-func _add_component(component: PCGSurfaceComponent, root: Node, definition: PCGComponentDefinition, host: PCGFusedWall, anchor: Vector2) -> void:
-	root.add_child(component)
+func _register_command_target(component: PCGSurfaceComponent) -> StringName:
+	for id in command_targets:
+		if command_targets[id] == component:
+			return id
+	var target_id := StringName("surface_component_%d" % component.get_instance_id())
+	command_targets[target_id] = component
+	return target_id
+
+func _component_param_patch(component: PCGSurfaceComponent) -> Dictionary:
+	return {
+		"anchor": component.anchor,
+		"attachment_angle_degrees": component.attachment_angle_degrees,
+		"user_scale": component.user_scale,
+		"transition_enabled": component.transition_enabled,
+		"transition_thickness": component.transition_thickness,
+		"transition_curvature": component.transition_curvature,
+		"transition_density": component.transition_density,
+		"transition_lod": component.transition_lod,
+	}
+
+# 所有命令 do/undo/redo 共用的补丁应用入口。
+func _apply_edit_command(command: PCGEditCommand, use_after: bool) -> void:
+	var component: PCGSurfaceComponent = command_targets.get(command.target_id)
+	if component == null or not is_instance_valid(component):
+		push_warning("PCGEditCommand 目标缺失: %s" % command.target_id)
+		return
+	var op := StringName(command.scope.get("op", &"param"))
+	if op == &"create" or op == &"delete":
+		var attach := (op == &"create") == use_after
+		if attach:
+			_restore_component(component, command, command.after if use_after else command.before)
+		else:
+			_detach_component(component)
+		return
+	_apply_param_patch(component, command.after if use_after else command.before)
+
+func _restore_component(component: PCGSurfaceComponent, command: PCGEditCommand, patch: Dictionary) -> void:
+	var root := EditorInterface.get_edited_scene_root()
+	if root == null:
+		return
 	if component.definition == null:
+		var definition := catalog.get_definition(StringName(command.scope.get("definition_id", "")))
+		var host: Node = root.get_node_or_null(NodePath(command.scope.get("host_path", "")))
+		if definition == null or host == null:
+			push_warning("无法恢复组件：定义或宿主缺失")
+			return
 		component.configure(definition, host)
-	component.anchor = host.clamp_anchor(anchor, definition)
-	component.owner = root
-	host.register_component(component)
-	component.update_transform()
-	_solve_neighborhood(component)
+	if component.get_parent() == null:
+		root.add_child(component)
+		component.owner = root
+	component.wall.register_component(component)
+	if patch.is_empty():
+		component.update_transform()
+		_solve_neighborhood(component)
+	else:
+		_apply_param_patch(component, patch)
+
+func _apply_param_patch(component: PCGSurfaceComponent, patch: Dictionary) -> void:
+	if patch.is_empty() or component.definition == null:
+		return
+	var needs_transform_update := false
+	for key in patch:
+		match String(key):
+			"anchor":
+				var value: Array = patch[key]
+				component.anchor = Vector2(float(value[0]), float(value[1]))
+				needs_transform_update = true
+			"attachment_angle_degrees":
+				component.attachment_angle_degrees = float(patch[key])
+				needs_transform_update = true
+			"user_scale":
+				component.set_user_scale(float(patch[key]))
+			"transition_enabled":
+				component.set_transition_enabled(bool(patch[key]))
+			"transition_thickness":
+				component.transition_thickness = float(patch[key])
+				needs_transform_update = true
+			"transition_curvature":
+				component.transition_curvature = float(patch[key])
+				needs_transform_update = true
+			"transition_density":
+				component.transition_density = float(patch[key])
+				needs_transform_update = true
+			"transition_lod":
+				component.transition_lod = int(patch[key])
+				needs_transform_update = true
+	if needs_transform_update:
+		component.update_transform()
+	if patch.has("anchor") or patch.has("user_scale"):
+		_solve_neighborhood(component)
+
+func _submit_param_command(command_id: StringName, patch: Dictionary, merge_key: StringName, component: PCGSurfaceComponent) -> void:
+	var command := PCGEditCommand.new()
+	command.command_id = command_id
+	command.target_id = _register_command_target(component)
+	command.scope = {"op": &"param"}
+	command.before = _component_param_patch(component)
+	command.after = patch
+	command.merge_key = merge_key
+	command.timestamp_ms = Time.get_ticks_msec()
+	command_history.submit(command)
 
 func _detach_component(component: PCGSurfaceComponent) -> void:
 	component.wall.unregister_component(component)
@@ -205,21 +311,24 @@ func _drag_component(screen_position: Vector2) -> void:
 	)
 	if hit.is_empty():
 		return
-	selected.anchor = selected.wall.clamp_anchor(hit["anchor"], selected.definition)
-	selected.update_transform()
-	_solve_neighborhood(selected)
+	var next_anchor: Vector2 = selected.wall.clamp_anchor(hit["anchor"], selected.definition)
+	_submit_param_command(&"拖动表面组件", {"anchor": next_anchor},
+		StringName("drag_move:%s:%d" % [drag_command_target, drag_merge_seq]), selected)
 
 func _drag_handle(screen_position: Vector2) -> void:
 	if selected == null:
 		return
 	var delta := screen_position - handle_start_mouse
+	var merge_key := StringName("drag_handle:%s:%s:%d" % [dragging_handle, drag_command_target, drag_merge_seq])
 	if dragging_handle == "angle":
-		selected.attachment_angle_degrees = clampf(handle_start_angle - delta.y * 0.4, -90.0, 90.0)
-		selected.update_transform()
+		_submit_param_command(&"调整法线倾角",
+			{"attachment_angle_degrees": clampf(handle_start_angle - delta.y * 0.4, -90.0, 90.0)},
+			merge_key, selected)
 	elif dragging_handle == "scale":
 		selected.neighborhood_scale = 1.0
-		selected.set_user_scale(handle_start_scale + delta.x * 0.005)
-		_solve_neighborhood(selected)
+		_submit_param_command(&"调整组件缩放",
+			{"user_scale": handle_start_scale + delta.x * 0.005},
+			merge_key, selected)
 
 func _pick_component(camera: Camera3D, screen_position: Vector2) -> PCGSurfaceComponent:
 	var hit := _ray_areas(camera, screen_position, 2)
@@ -262,37 +371,31 @@ func _select_node(node: Node) -> void:
 
 func set_attachment_angle(value: float) -> void:
 	if selected != null:
-		selected.attachment_angle_degrees = value
-		selected.update_transform()
+		_submit_param_command(&"设置法线倾角", {"attachment_angle_degrees": value}, &"", selected)
 
 func set_user_scale(value: float) -> void:
 	if selected != null:
-		selected.set_user_scale(value)
-		_solve_neighborhood(selected)
+		_submit_param_command(&"设置组件缩放", {"user_scale": value}, &"", selected)
 
 func set_transition_enabled(value: bool) -> void:
 	if selected != null:
-		selected.set_transition_enabled(value)
+		_submit_param_command(&"设置过渡开关", {"transition_enabled": value}, &"", selected)
 
 func set_transition_thickness(value: float) -> void:
 	if selected != null:
-		selected.transition_thickness = value
-		selected.update_transform()
+		_submit_param_command(&"设置过渡厚度", {"transition_thickness": value}, &"", selected)
 
 func set_transition_curvature(value: float) -> void:
 	if selected != null:
-		selected.transition_curvature = value
-		selected.update_transform()
+		_submit_param_command(&"设置过渡弧度", {"transition_curvature": value}, &"", selected)
 
 func set_transition_density(index: int) -> void:
 	if selected != null:
-		selected.transition_density = [0.25, 0.5, 1.0, 2.0][index]
-		selected.update_transform()
+		_submit_param_command(&"设置过渡精度", {"transition_density": [0.25, 0.5, 1.0, 2.0][index]}, &"", selected)
 
 func set_transition_lod(index: int) -> void:
 	if selected != null:
-		selected.transition_lod = index
-		selected.update_transform()
+		_submit_param_command(&"设置过渡 LOD", {"transition_lod": index}, &"", selected)
 
 func set_deferred_fusion(value: bool) -> void:
 	for host in _hosts():
@@ -317,11 +420,14 @@ func delete_selected() -> void:
 	if selected == null:
 		return
 	var component := selected
-	var undo := get_undo_redo()
-	undo.create_action("删除表面组件")
-	undo.add_do_method(self, "_detach_component", component)
-	undo.add_undo_method(self, "_add_component", component, EditorInterface.get_edited_scene_root(), component.definition, component.wall, component.anchor)
-	undo.commit_action()
+	var command := PCGEditCommand.new()
+	command.command_id = &"删除表面组件"
+	command.target_id = _register_command_target(component)
+	command.scope = {"op": &"delete"}
+	command.before = _component_param_patch(component)
+	command.after = {}
+	command.timestamp_ms = Time.get_ticks_msec()
+	command_history.submit(command)
 	selected = null
 	dock.set_selected(null)
 
