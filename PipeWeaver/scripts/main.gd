@@ -972,7 +972,8 @@ func _append_paint_point(screen_position: Vector2) -> void:
 	paint_hard_corners.append(false)
 	_update_preview(paint_points, paint_normals)
 
-func _surface_crease(first_point: Vector3, first_normal: Vector3, second_point: Vector3, second_normal: Vector3) -> Dictionary:
+func _surface_crease(first_point: Vector3, first_normal: Vector3, second_point: Vector3, second_normal: Vector3, surface: CollisionObject3D = null) -> Dictionary:
+	var target: CollisionObject3D = surface if surface != null else paint_collider
 	var n1: Vector3 = first_normal.normalized()
 	var n2: Vector3 = second_normal.normalized()
 	var direction: Vector3 = n1.cross(n2)
@@ -987,11 +988,11 @@ func _surface_crease(first_point: Vector3, first_normal: Vector3, second_point: 
 	if edge_point.distance_to(first_point) < 0.04 or edge_point.distance_to(second_point) < 0.04:
 		return {}
 	var average_normal: Vector3 = (n1 + n2).normalized()
-	var projected: Dictionary = SurfaceSolver.project(edge_point, average_normal, paint_collider, get_world_3d().direct_space_state)
+	var projected: Dictionary = SurfaceSolver.project(edge_point, average_normal, target, get_world_3d().direct_space_state)
 	if projected.is_empty():
-		projected = SurfaceSolver.project(edge_point, n1, paint_collider, get_world_3d().direct_space_state)
+		projected = SurfaceSolver.project(edge_point, n1, target, get_world_3d().direct_space_state)
 	if projected.is_empty():
-		projected = SurfaceSolver.project(edge_point, n2, paint_collider, get_world_3d().direct_space_state)
+		projected = SurfaceSolver.project(edge_point, n2, target, get_world_3d().direct_space_state)
 	return {"position": edge_point if projected.is_empty() else projected["position"], "normal": average_normal}
 
 func _finish_paint() -> void:
@@ -1038,6 +1039,7 @@ func _rebuild_from_controls() -> void:
 		_update_preview([], [])
 		_update_control_settings()
 		return
+	_ensure_edge_controls()
 	var smoothed: Dictionary = SurfaceSolver.smooth_and_project(control_points, control_normals, path_collider, 0, get_world_3d().direct_space_state, control_hard_corners, control_corner_segments, control_wall_offsets, control_colliders)
 	path_points.assign(smoothed["points"])
 	path_normals.assign(smoothed["normals"])
@@ -1047,6 +1049,31 @@ func _rebuild_from_controls() -> void:
 	stats_label.text = "长度 %.2f m · %d 顶点 · %d 个接头" % [generated_length, generated_vertex_count, pipe_root.get_child_count() - 2]
 	_update_preview(path_points, path_normals)
 	_update_control_settings()
+
+func _ensure_edge_controls() -> void:
+	if control_hard_corners.size() != control_points.size():
+		return
+	var i: int = 0
+	while i < control_points.size() - 1:
+		if control_hard_corners[i] or control_hard_corners[i + 1] or control_colliders[i] != control_colliders[i + 1]:
+			i += 1
+			continue
+		if control_normals[i].dot(control_normals[i + 1]) >= 0.7071:
+			i += 1
+			continue
+		var crease: Dictionary = _surface_crease(control_points[i], control_normals[i], control_points[i + 1], control_normals[i + 1], control_colliders[i])
+		if crease.is_empty():
+			i += 1
+			continue
+		var insert_at: int = i + 1
+		control_points.insert(insert_at, crease["position"])
+		control_normals.insert(insert_at, crease["normal"])
+		control_hard_corners.insert(insert_at, true)
+		control_angles.insert(insert_at, 90.0)
+		control_corner_segments.insert(insert_at, default_corner_segments)
+		control_wall_offsets.insert(insert_at, lerpf(control_wall_offsets[i], control_wall_offsets[i + 1], 0.5))
+		control_colliders.insert(insert_at, control_colliders[i])
+		i += 2
 
 func _update_control_settings() -> void:
 	if angle_spin == null:
