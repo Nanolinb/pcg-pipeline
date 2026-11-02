@@ -13,14 +13,36 @@ const DOCK_SCRIPT_PATH := "res://addons/surface_components/dock.gd"
 const TASK_DIR := "user://pcg_l1_standardization_test/tasks"
 const PUBLISH_DIR := "user://pcg_l1_standardization_test/published"
 const TEMP_DIR := "user://pcg_l1_standardization_test"
+const CAPTURE_DIR := "res://reports/release_verification/v0.16.0"
 
 var checks_run := 0
 var failures: Array[String] = []
 var _window: Window
+var _capture_mode := false
 
 
 func _initialize() -> void:
+	_capture_mode = "--capture" in OS.get_cmdline_user_args() \
+		and DisplayServer.get_name() != "headless"
+	print("L1_STD_CAPTURE_MODE: %s" % ("ON" if _capture_mode else "OFF"))
 	_main()
+
+
+## 可选 --capture：非 headless 下把真实视口存为 PNG 到
+## reports/release_verification/v0.16.0/，日志打印 CAPTURE 路径。
+## 不改变任何断言与流程。
+func _capture(tag: String) -> void:
+	if not _capture_mode:
+		return
+	await process_frame
+	await process_frame
+	var image := root.get_texture().get_image()
+	var path := CAPTURE_DIR + "/" + tag + ".png"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(CAPTURE_DIR))
+	if image.save_png(ProjectSettings.globalize_path(path)) == OK:
+		print("CAPTURE: %s" % ProjectSettings.globalize_path(path))
+	else:
+		_record(false, "capture saved %s" % tag, path)
 
 
 func _main() -> void:
@@ -247,6 +269,10 @@ func _check_window_opens_and_task_selection() -> void:
 	_record((_window.get_target_size() - Vector3(1.2, 2.4, 0.3)).length() < 0.001,
 		"task selection applies target size to calibration form")
 	_record(is_equal_approx(_window.root_embed_spin.value, 0.12), "task selection applies root_embed")
+	if _capture_mode:
+		_window.size = Vector2i(1120, 890)
+		await process_frame
+	await _capture("01_window_open")
 
 
 func _check_problem_meshes_blocked() -> void:
@@ -267,6 +293,7 @@ func _check_problem_meshes_blocked() -> void:
 	ids = _blocking_ids()
 	_record(ids.has("winding"), "inverted closed box blocked (winding/volume sign)", ", ".join(ids))
 	_record(not ids.has("uv0"), "inverted box still passes uv0 (uv present)")
+	await _capture("01b_problem_report")
 	var refused: Dictionary = _window.publish()
 	_record(not refused.get("ok", false), "publish refused while hard checks fail")
 
@@ -323,6 +350,7 @@ func _check_calibration() -> void:
 		"target size survived round trip through form")
 	_record(_blocking_ids().is_empty(), "calibrated good box passes all hard checks")
 	_record(not _window.publish_button.disabled, "publish enabled after calibration passes")
+	await _capture("02_loaded_calibrated")
 
 
 func _check_trial_fit_hosts() -> void:
@@ -342,6 +370,7 @@ func _check_trial_fit_hosts() -> void:
 		report_ids.append(String(entry["id"]))
 	_record(report_ids.has("fit_plane") and report_ids.has("fit_cylinder")
 		and report_ids.has("fit_dome_cylinder"), "fit results rendered into acceptance report")
+	await _capture("03_trial_fit")
 
 
 func _check_fit_negative_cases() -> void:
@@ -426,6 +455,7 @@ func _check_publish_and_reload() -> void:
 	var manifest: Dictionary = published.get("manifest", {})
 	_record(manifest.get("lods", {}).keys().size() == 2,
 		"publish manifest records lod1/lod2 generation detail")
+	await _capture("04_published")
 	var json := JSON.new()
 	_record(json.parse(FileAccess.get_file_as_string(path)) == OK and json.data is Dictionary,
 		"published .asset.json is valid JSON")
@@ -483,6 +513,7 @@ func _check_publish_and_reload() -> void:
 		_record((_dict_to_aabb(occupancy["exclusion"]).position - expected_exclusion.position).length() < 0.01
 			and (_dict_to_aabb(occupancy["exclusion"]).size - expected_exclusion.size).length() < 0.01,
 			"occupancy.exclusion expands embed by 0.05")
+	await _capture("05_reloaded")
 	if asset != null:
 		_record((asset.resolved_dimensions() - Vector3(1.0, 2.0, 0.25)).length() < 0.01,
 			"reloaded asset dimensions match calibrated mesh", str(asset.resolved_dimensions()))

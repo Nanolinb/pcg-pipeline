@@ -96,4 +96,6 @@
 - 根工程独立 smoke 为 `godot --headless --path . -s scripts/tests/run_smoke_test.gd`，原 `-- --smoke-test` 入口保持兼容。
 - PipeWeaver 独立 smoke 为 `godot --headless --path PipeWeaver res://tests/pipeweaver_smoke.tscn`，必须覆盖真实生成、路径、内存重编辑与多 Surface 合批。
 - 图形输入、截图和性能按 `docs/performance_baseline.md` 在本机图形会话验证，不以 headless Dummy Renderer 代替。
+- 每个功能版本必须由开发侧先完成发布验证，提供真实结果、证据、使用方式和用户验收清单；流程遵循 `docs/release_acceptance.md`。
+- 发布报告保存到 `reports/release_verification/<version>/`，包含日志、关键场景截图、已知限制和反馈步骤；不得把未验证交互写成已通过。
 - 每次需求变更同步更新 `docs/requirements.md` 与 `docs/changelog.md`。
