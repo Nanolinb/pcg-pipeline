@@ -408,6 +408,8 @@ func merge_selected() -> void:
 		host.merge_component(selected)
 		selected.set_direct_preview(false)
 		dock.set_selected(selected)
+		command_history.clear_history()
+		command_targets.clear()
 
 func merge_all() -> void:
 	for host in _hosts():
@@ -415,6 +417,8 @@ func merge_all() -> void:
 		for component in host.components:
 			component.set_direct_preview(false)
 			component.flush_transition_csg()
+	command_history.clear_history()
+	command_targets.clear()
 
 func delete_selected() -> void:
 	if selected == null:

@@ -6,7 +6,7 @@ config/features=PackedStringArray("4.6", "GL Compatibility")
 
 [autoload]
 
-MaterialLibrary="*res://scripts/material_library.gd"
+MaterialLibrary="*res://addons/pcg_shared/material_library.gd"
 
 [display]
 window/size/viewport_width=1440

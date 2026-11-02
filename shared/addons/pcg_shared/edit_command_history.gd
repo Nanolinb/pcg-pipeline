@@ -53,6 +53,11 @@ func redo() -> void:
 func committed_count() -> int:
 	return committed.size()
 
+func clear_history() -> void:
+	_pending_merge = null
+	committed.clear()
+	undo_redo.clear_history()
+
 func _can_merge(command: PCGEditCommand) -> bool:
 	return (_pending_merge != null
 		and command.merge_key != &""
@@ -61,4 +66,5 @@ func _can_merge(command: PCGEditCommand) -> bool:
 		and command.timestamp_ms - _pending_merge.timestamp_ms <= MERGE_WINDOW_MS)
 
 func _apply_committed(command: PCGEditCommand, use_after: bool) -> void:
+	_pending_merge = null
 	apply_entry.call(command, use_after)

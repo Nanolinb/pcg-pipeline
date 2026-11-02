@@ -1,7 +1,7 @@
 extends Node3D
 
-const PipeBuilder = preload("res://scripts/pipe_mesh_builder.gd")
-const SurfaceSolver = preload("res://scripts/surface_path_solver.gd")
+const PipeBuilder = preload("res://addons/pcg_shared/pipe_mesh_builder.gd")
+const SurfaceSolver = preload("res://addons/pcg_shared/surface_path_solver.gd")
 const TextureLibrary = preload("res://scripts/pipe_texture_library.gd")
 
 var camera: Camera3D

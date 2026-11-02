@@ -37,6 +37,7 @@ func _initialize() -> void:
 	_check_merge_window_expiry()
 	_check_empty_merge_key_never_merges()
 	_check_undo_closes_merge()
+	_check_history_reset()
 	_check_patch_hash_stable_across_redo()
 	print("EDIT_CMD_CHECKS: %d run, %d failed" % [checks_run, failures.size()])
 	if failures.is_empty():
@@ -216,6 +217,15 @@ func _check_undo_closes_merge() -> void:
 	_history.undo()
 	_history.submit(_make_command(&"拖动表面组件", &"surface_component_1", {}, {"anchor": [0.8, 0.0]}, key, 1100))
 	_record(_history.committed_count() == 2, "submit after undo opens a new entry, no stale merge")
+
+func _check_history_reset() -> void:
+	_make_history()
+	_target_state = {}
+	_history.submit(_make_command(&"合并表面组件", &"surface_component_1", {}, {"merged": true}, &"merge:1", 1000))
+	_history.clear_history()
+	_record(_history.committed_count() == 0, "merge boundary clears committed history")
+	_history.submit(_make_command(&"合并后拖动", &"surface_component_1", {}, {"anchor": [1.0, 0.0]}, &"merge:1", 1100))
+	_record(_history.committed_count() == 1, "merge boundary prevents stale pending merge")
 
 func _check_patch_hash_stable_across_redo() -> void:
 	_make_history()

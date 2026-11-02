@@ -78,6 +78,16 @@ func batch_key(material: Material) -> StringName:
 func unique_material_count() -> int:
 	return _materials.size()
 
+func update_shaders(id_prefix: StringName, parameters: Dictionary) -> void:
+	for id in _materials:
+		if not String(id).begins_with(String(id_prefix)):
+			continue
+		var material := _materials[id] as ShaderMaterial
+		if material == null:
+			continue
+		for parameter in parameters:
+			material.set_shader_parameter(parameter, parameters[parameter])
+
 func _register(material: Material, id: StringName, uv_policy: StringName = &"preserve", texture_world_size: float = 1.0) -> void:
 	material.set_meta("material_id", id)
 	material.set_meta("uv_policy", uv_policy)

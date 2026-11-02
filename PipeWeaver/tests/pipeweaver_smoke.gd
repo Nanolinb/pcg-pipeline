@@ -6,8 +6,8 @@ extends Node
 # 失败时进程以非零退出码结束，并逐条打印 PIPE_SMOKE_FAIL。
 
 const MainScript := preload("res://scripts/main.gd")
-const PipeBuilder := preload("res://scripts/pipe_mesh_builder.gd")
-const SurfaceSolver := preload("res://scripts/surface_path_solver.gd")
+const PipeBuilder := preload("res://addons/pcg_shared/pipe_mesh_builder.gd")
+const SurfaceSolver := preload("res://addons/pcg_shared/surface_path_solver.gd")
 
 const BASELINE_LENGTH := 3.775
 const BASELINE_VERTICES := 625

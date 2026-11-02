@@ -3,7 +3,8 @@ extends SceneTree
 # BASE-05 共享载体 Spike 验证脚本（单源，随共享包分发）。
 # 运行：Godot --headless --path <消费者工程> -s res://addons/pcg_shared/tests/spike_check.gd
 # 在同一物理共享模块上验证：加载、资源 API、class_name/uid/Autoload/插件冲突、
-# 干净重导入后的注册，以及主程序现有 Material Profile 行为不变（若该工程存在）。
+# 干净重导入后的注册，以及 v0.14 迁移后主程序行为（无本地副本、.tres 由共享脚本解析、
+# MaterialLibrary Autoload 指向共享模块；若该工程存在）。
 
 const MODULE_PATH := "res://addons/pcg_shared"
 const PROFILE_SCRIPT_PATH := MODULE_PATH + "/shared_material_profile.gd"
@@ -13,7 +14,16 @@ const CORE_CHECKS_SCRIPT_PATH := MODULE_PATH + "/tests/core_kernel_checks.gd"
 const PROFILE_UID_PATH := MODULE_PATH + "/shared_material_profile.gd.uid"
 const PROFILE_CLASS := "PCGSharedMaterialProfile"
 const CODEC_CLASS := "PCGSharedMaterialCodec"
-const LOCAL_PROFILE_SCRIPT := "res://scripts/material_profile.gd"
+# v0.14 起从两个主程序迁入共享模块的脚本（类名 -> 文件名）。
+const MIGRATED_CLASSES := {
+	"PCGMaterialProfile": "material_profile.gd",
+	"PCGMeshChunkBaker": "mesh_chunk_baker.gd",
+	"PipeMeshBuilder": "pipe_mesh_builder.gd",
+	"SurfacePathSolver": "surface_path_solver.gd",
+	"PCGTextureSlotPanel": "texture_slot_panel.gd",
+}
+const MIGRATED_LIBRARY_SCRIPT := MODULE_PATH + "/material_library.gd"
+const LOCAL_SCRIPTS_DIR := "res://scripts"
 
 var checks_run: int = 0
 var failures: Array[String] = []
@@ -77,6 +87,18 @@ func _check_class_registration() -> void:
 				"codec class path points at shared addon", String(entry.get("path", "")))
 	_record(profile_hits == 1, "profile class registered exactly once", "hits=%d" % profile_hits)
 	_record(codec_hits == 1, "codec class registered exactly once", "hits=%d" % codec_hits)
+	for class_name_migrated in MIGRATED_CLASSES:
+		var expected_file: String = MIGRATED_CLASSES[class_name_migrated]
+		# 根工程内 addons/pcg_shared 是指向 shared/ 的符号链接，编辑器类缓存可能
+		# 记录为 res://shared/addons/pcg_shared/...；两种前缀都视为共享模块内。
+		var hits := 0
+		for entry in entries:
+			if String(entry.get("class", "")) == class_name_migrated:
+				hits += 1
+				var entry_path := String(entry.get("path", ""))
+				_record(entry_path.ends_with("/pcg_shared/" + expected_file),
+					"%s class path points at shared addon" % class_name_migrated, entry_path)
+		_record(hits == 1, "%s registered exactly once" % class_name_migrated, "hits=%d" % hits)
 
 func _walk_files(dir_path: String, suffix: String, results: Array[String]) -> void:
 	var dir := DirAccess.open(dir_path)
@@ -226,19 +248,36 @@ func _check_core_kernel() -> void:
 		failures.append(String(failure))
 
 func _check_existing_behavior_unchanged() -> void:
-	# 主程序（根工程 / PipeWeaver）：本地 PCGMaterialProfile 与既有 .tres 必须照常加载。
-	# 第三方消费者：必须不存在本地副本，证明共享模块未污染隔离工程。
-	if FileAccess.file_exists(LOCAL_PROFILE_SCRIPT):
-		var local_script: GDScript = load(LOCAL_PROFILE_SCRIPT)
-		_record(local_script != null, "local PCGMaterialProfile still loads", LOCAL_PROFILE_SCRIPT)
-		var local: Resource = local_script.new()
-		_record(local.texture_for_slot(&"base_color") == null
-			and local.texture_for_slot(&"bogus") == null, "local profile API intact")
-		for tres_path in ["res://assets/materials/round_window_frame.tres",
-				"res://assets/pipe_material.tres"]:
-			if FileAccess.file_exists(tres_path):
-				var resource := ResourceLoader.load(tres_path)
-				_record(resource != null and resource.get_script() == local_script,
-					"existing .tres still resolves local profile", tres_path)
+	# v0.14 迁移后：主程序（根工程 / PipeWeaver）不得再保留已迁移脚本的本地副本；
+	# 既有 .tres 必须由共享模块里的脚本解析；MaterialLibrary Autoload 指向共享模块。
+	# 第三方消费者：无本地副本、无 .tres、无 Autoload，全部条件检查自动通过。
+	var local_leftovers: Array[String] = []
+	for class_name_migrated in MIGRATED_CLASSES:
+		var local_path: String = LOCAL_SCRIPTS_DIR + "/" + MIGRATED_CLASSES[class_name_migrated]
+		if FileAccess.file_exists(local_path):
+			local_leftovers.append(local_path)
+	_record(local_leftovers.is_empty(), "no local copy of migrated scripts",
+		", ".join(PackedStringArray(local_leftovers)))
+	var library_autoload_path := String(ProjectSettings.get_setting("autoload/MaterialLibrary", ""))
+	if not library_autoload_path.is_empty():
+		_record(library_autoload_path == "*" + MIGRATED_LIBRARY_SCRIPT,
+			"MaterialLibrary autoload points at shared addon", library_autoload_path)
+		var library_script: GDScript = load(MIGRATED_LIBRARY_SCRIPT)
+		_record(library_script != null, "shared material library compiles", MIGRATED_LIBRARY_SCRIPT)
 	else:
-		_record(true, "consumer isolation: no local material_profile copy present")
+		_record(true, "consumer isolation: no MaterialLibrary autoload present")
+	var profile_script: GDScript = load(MODULE_PATH + "/material_profile.gd")
+	_record(profile_script != null, "shared PCGMaterialProfile loads")
+	if profile_script != null:
+		var profile: Resource = profile_script.new()
+		_record(profile.texture_for_slot(&"base_color") == null
+			and profile.texture_for_slot(&"bogus") == null, "shared profile API intact")
+	for tres_path in ["res://assets/materials/round_window_frame.tres",
+			"res://assets/materials/square_window_frame.tres",
+			"res://assets/materials/round_window_glass.tres",
+			"res://assets/materials/square_window_glass.tres",
+			"res://assets/pipe_material.tres"]:
+		if FileAccess.file_exists(tres_path):
+			var resource := ResourceLoader.load(tres_path)
+			_record(resource != null and resource.get_script() == profile_script,
+				"existing .tres resolves shared profile", tres_path)
