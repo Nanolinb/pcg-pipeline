@@ -1,6 +1,6 @@
 # v0.14 公共核心契约
 
-本文是 BASE-06 的评审结果，冻结 v0.14 开始实现的最小字段和语义。只覆盖公共内核，不提前定义建筑样本或城市生成字段。
+本文是 BASE-06 的评审结果，冻结 v0.14 开始实现的最小字段和语义。§1～7 覆盖公共内核；§8 起为 v0.17～v0.20 的建筑生产闭环新增前置契约，只在对应首个消费者版本中冻结，不代表当前已经实现。
 
 ## 1. 持久化与稳定 ID
 
@@ -150,7 +150,29 @@ RebuildSignature
 
 PipeWeaver 快照字段在 v0.19 随消费者冻结；v0.14 只复用格式版本和迁移接口。内存 `pipe_records` 不得被误称为已有磁盘快照格式。
 
-## 8. 验收测试
+## 8. 槽位生产闭环契约（新增前置，v0.17～v0.20）
+
+以下不是当前已实现能力，而是最小建筑生产闭环的新增前置契约：
+
+```text
+ComponentSlot(slot_id, spec_id)
+  → RequirementSpec(spec_id, compatibility_signature)
+  → L0 task(task_id)
+  → CandidateEnvelope(candidate_id, producer, provenance)
+  → L1 published asset(asset_id, asset_version)
+  → SlotBinding(slot_id, asset_id, asset_version, binding_version)
+```
+
+- 术语区分：L1 的“资产白盒”是单个资产的简化显示/碰撞代理；建筑“功能白盒”是包含主体、功能区和组件槽位的建筑级语义代理，两者不得互相替换或丢失。
+- 白盒占位必须保存稳定 slot_id、宿主、组件族、变换、接口、碰撞、占用和 spec_id；替换显示不得删除这些数据。
+- RequirementSpec 携带概念稿/风格包、固定/可变/禁止特征、尺寸范围、占用、LOD 和材质预算；兼容签名用于批量归并，而不是按实例创建任务。
+- 已有合格资产和任务优先复用；只有缺失或不合格需求进入新生产批次。
+- 人工、AI 和程序候选统一使用 CandidateEnvelope 并进入同一 L1 验收，不允许直接绑定未发布候选。
+- SlotBinding 固定资产 ID 与版本；升级必须显式执行，保存重开和局部重建不得改变既有绑定。
+- 候选失败、校验失败或发布失败时，白盒、旧绑定、其他槽位和发布目录零副作用。
+- 契约首个端到端消费者为 `G3A_SlotLoop`，必须验证批量归并、发布回填、保存重开、局部重建和失败零副作用。
+
+## 9. 验收测试
 
 | ID | 验收 |
 |---|---|

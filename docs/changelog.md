@@ -1,5 +1,22 @@
 # 修改记录
 
+## 2026-11-03 · 基础生产闭环路线图修订
+
+### 核心生产链
+- 将“概念设计→功能白盒/占位→需求归并→批量L0任务→人工/Tripo/Meshy/程序分发→统一L1→槽位绑定回填→BuildingRecipe保存/局部重建”提升为总体核心原则。
+- 建立 `slot_id → L0 task → candidates → published asset + version → slot binding` 追踪链，明确当前尚未实现这些闭环能力。
+
+### 阶段与契约调整
+- v0.17 增加 ComponentSlot、RequirementSpec、ProductionBatch、CandidateEnvelope、统一收件箱和按风格生产分发。
+- v0.18 增加功能白盒占位、批量需求提取、组件族/兼容规格归并、库资产与旧任务复用；禁止逐实例调用 AI。
+- v0.20 增加 SlotBinding、批量替换、功能数据保留、局部重建和失败零副作用，形成最小纵向闭环。
+- v0.30 保留通用外部 API、权限、审计和规模化自动化，不再承担 Tripo/Meshy 的首次生产接入。
+
+### 验收与文档
+- 新增 `G3A_SlotLoop` 端到端场景，覆盖批量任务、候选发布、回填、保存重开、局部重建和失败零副作用。
+- 同步更新 `docs/requirements.md`、`docs/core_contracts.md` 与 `docs/release_acceptance.md`，区分当前已实现、新增前置契约和未来在线 AI 接入。
+- 本次只修订规划与验收契约，未改变现有工具功能或版本标签。
+
 ## 2026-11-03 · v0.16.2 测试资产绕序与发布修复
 
 ### 用户问题与修复
