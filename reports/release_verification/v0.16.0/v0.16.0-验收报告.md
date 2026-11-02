@@ -1,0 +1,100 @@
+# v0.16.0 发布验收报告
+
+日期：2026-11-02  
+版本：`v0.16.0`  
+提交：`dd469351edb9f4877a08936896cf5f5a700295e3`  
+环境：Apple M3 Pro，macOS 26.6.2，Godot 4.6.2，GL Compatibility。
+
+## 开发侧验证结果
+
+### 自动门禁
+
+执行：
+
+```bash
+tools/run_gate.sh
+```
+
+结果：`GATE_PASS: all headless checks passed`。日志：`gate_v0.16.0_postrelease.log`（上级 `reports/baseline/`）。
+
+### 真实图形功能流程
+
+执行：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --path . -s scripts/tests/run_asset_standardization_window_test.gd -- --capture
+```
+
+结果：`L1_STD_CHECKS: 84 run, 0 failed`，`L1_STD_RESULT: PASS`，退出码 0。
+
+该流程使用真实窗口控件和资源 API，依次验证：
+
+- 打开 L1 窗口并选择任务。
+- 问题 Mesh 的开放边、零面积、非流形、翻转和 UV 错误报告。
+- 从路径加载 Mesh/PackedScene。
+- 尺寸、轴向、根部校准。
+- 平面、圆柱、半球圆柱试装。
+- 白盒、碰撞、LOD 与五类占用区域。
+- 正式发布、Mesh 文件落盘、重载与篡改检测。
+
+### 截图证据
+
+- `01_window_open.png`：窗口与任务选择。
+- `01b_problem_report.png`：问题资产验收报告。
+- `02_loaded_calibrated.png`：资源加载与校准。
+- `03_trial_fit.png`：三种主体试装通过。
+- `04_published.png`：正式发布完成。
+- `05_reloaded.png`：重载核对通过。
+
+本次使用实际控件驱动与视口截图，不是仅运行 headless；未把此前不可靠的自动鼠标点击计为通过。
+
+## 用户使用方式
+
+1. 用 Godot 4.6.2 打开根目录 `project.godot`。
+2. 在检查器“表面组件”面板顶部点击 **“资产标准化”**。
+3. 选择一个 L0 任务。
+4. 候选资源输入 `res://assets/raw/valid_crate.tres`，点击“加载”。
+5. 检查报告，点击“执行校准”。
+6. 分别选择平面、圆柱、半球圆柱并执行试装。
+7. 设置净空余量和视觉保护区，生成白盒、碰撞与 LOD。
+8. 硬性检查通过后点击“发布”。
+9. 点击“重载”，确认网格、LOD、占用与验收报告一致。
+
+## 用户验收清单
+
+### 入口与加载
+
+- [ ] 面板顶部能看到并点击“资产标准化”。
+- [ ] 窗口标题为“L1 资产标准化与验收”。
+- [ ] 能选择任务并加载 `valid_crate.tres`。
+- [ ] 加载后显示网格统计和验收报告。
+
+### 问题资产反馈
+
+- [ ] 加载 `open_crate.tres` 能指出开放边。
+- [ ] 加载 `degenerate_crate.tres` 能指出零面积面。
+- [ ] 加载 `non_manifold_fan.tres` 能指出非流形。
+- [ ] 加载 `uv_missing_crate.tres` 能指出 UV0 缺失。
+- [ ] 问题资产不能通过硬性验收并发布。
+
+### 校准与试装
+
+- [ ] 修改目标尺寸后，校准结果尺寸随之更新。
+- [ ] 根部嵌入和轴向设置有可见结果。
+- [ ] 平面、圆柱、半球圆柱试装均无异常反转、漂浮或穿背。
+
+### 发布与恢复
+
+- [ ] 能生成白盒、碰撞和 LOD 状态。
+- [ ] 能设置净空与视觉保护区。
+- [ ] 发布后目录中存在资产清单和每级 Mesh 文件。
+- [ ] 重载后尺寸、网格、LOD、占用和报告保持一致。
+- [ ] 重复 ID 或缺失依赖会显示错误，不静默覆盖。
+
+## 已知限制与反馈
+
+- 本版本不包含 L2 参数化组合件或建筑样本生成。
+- 根工程仍有既有退出清理警告，未计为已修复。
+- 共享链接在其他平台需要单独复测。
+
+反馈时请附：操作步骤、输入资源、验收报告截图、Godot 版本和 `reports/baseline/` 中对应日志。
