@@ -27,6 +27,8 @@ func setup(controller: EditorPlugin, definitions: Array[PCGComponentDefinition])
 	_add_hint("先创建主体，再从组件库拖入视口。\n松开创建；选中后可拖动与合并。")
 	if plugin.has_method("open_asset_tasks"):
 		_add_button("资产任务", plugin.open_asset_tasks)
+	if plugin.has_method("open_asset_standardization"):
+		_add_button("资产标准化", plugin.open_asset_standardization)
 	_add_heading("附着主体")
 	_add_button("创建平面墙", plugin.create_host.bind(0))
 	_add_button("创建圆柱", plugin.create_host.bind(1))

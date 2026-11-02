@@ -1,0 +1,19 @@
+[gd_resource type="ArrayMesh" format=4]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_2bn5x"]
+resource_name = "non_manifold_fan_material"
+
+[resource]
+resource_name = "non_manifold_fan"
+_surfaces = [{
+"aabb": AABB(-0.5, -0.5, 0, 1, 1, 0.5),
+"attribute_data": PackedByteArray("AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/"),
+"format": 34359742487,
+"index_count": 9,
+"index_data": PackedByteArray("AAABAAIAAwAEAAUABgAHAAgA"),
+"material": SubResource("StandardMaterial3D_2bn5x"),
+"primitive": 3,
+"uv_scale": Vector4(0, 0, 0, 0),
+"vertex_count": 9,
+"vertex_data": PackedByteArray("AAAAvwAAAL8AAAAAAAAAPwAAAD8AAAAAAAAAPwAAAL8AAAAAAAAAvwAAAL8AAAAAAAAAvwAAAD8AAAAAAAAAPwAAAD8AAAAAAAAAvwAAAL8AAAAAAAAAAAAAAAAAAAA/AAAAPwAAAD8AAAAA//////9/AID//////38AgP//////fwCA//////9/AID//////38AgP//////fwCA/z//v1RVqar/P/+/VFWpqv8//79UVamq")
+}]

@@ -77,6 +77,9 @@ run_logged_test "PipeWeaver headless smoke" "PIPE_SMOKE_PASS" "$GODOT_BIN" --hea
 run_logged_test "edit command contract" "EDIT_CMD_RESULT: PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s scripts/tests/run_edit_command_test.gd
 run_logged_test "surface host contract" "HOST_TEST_RESULT: PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s scripts/tests/run_surface_host_test.gd
 run_logged_test "asset task window UI" "ASSET_TASK_RESULT: PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s scripts/tests/run_asset_task_window_test.gd
+run_logged_test "mesh inspector contract" "MESH_RESULT: PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s addons/pcg_shared/tests/mesh_inspector_check.gd
+run_logged_test "standard asset publishing" "STD_ASSET_RESULT: PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s scripts/tests/run_standard_asset_test.gd
+run_logged_test "asset standardization window UI" "L1_STD_RESULT: PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s scripts/tests/run_asset_standardization_window_test.gd
 run_test "shared addon cold-import spike" "$ROOT_DIR/tools/run_shared_addon_spike.sh"
 
 if [[ "$failures" -ne 0 ]]; then

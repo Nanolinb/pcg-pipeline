@@ -8,6 +8,7 @@ const SurfaceComponent = preload("res://scripts/surface_component.gd")
 const OverlapSolver = preload("res://scripts/overlap_solver.gd")
 const Dock = preload("res://addons/surface_components/dock.gd")
 const AssetTaskWindow = preload("res://addons/surface_components/asset_task_window.gd")
+const AssetStandardizationWindow = preload("res://addons/surface_components/asset_standardization_window.gd")
 
 var catalog := PCGComponentCatalog.new()
 var dock: VBoxContainer
@@ -30,6 +31,7 @@ var command_targets: Dictionary = {}  # StringName -> PCGSurfaceComponent（会�
 var drag_command_target: StringName = &""
 var drag_merge_seq: int = 0
 var asset_task_window: Window
+var asset_standardization_window: Window
 
 func _ready() -> void:
 	catalog.load_from("res://assets/components")
@@ -42,6 +44,8 @@ func _ready() -> void:
 	EditorInterface.get_selection().selection_changed.connect(_on_editor_selection_changed)
 	if "--asset-task-gui-check" in OS.get_cmdline_user_args():
 		call_deferred("open_asset_tasks")
+	elif "--asset-standardization-gui-check" in OS.get_cmdline_user_args():
+		call_deferred("open_asset_standardization")
 
 func _exit_tree() -> void:
 	_cancel_ghost()
@@ -49,6 +53,8 @@ func _exit_tree() -> void:
 		dock.queue_free()
 	if is_instance_valid(asset_task_window):
 		asset_task_window.queue_free()
+	if is_instance_valid(asset_standardization_window):
+		asset_standardization_window.queue_free()
 	EditorInterface.get_selection().selection_changed.disconnect(_on_editor_selection_changed)
 
 func open_asset_tasks() -> void:
@@ -56,6 +62,12 @@ func open_asset_tasks() -> void:
 		asset_task_window = AssetTaskWindow.new()
 		EditorInterface.get_base_control().add_child(asset_task_window)
 	asset_task_window.open_tasks()
+
+func open_asset_standardization() -> void:
+	if asset_standardization_window == null or not is_instance_valid(asset_standardization_window):
+		asset_standardization_window = AssetStandardizationWindow.new()
+		EditorInterface.get_base_control().add_child(asset_standardization_window)
+	asset_standardization_window.open_standardization()
 
 func _handles(object: Object) -> bool:
 	return object is Node3D
