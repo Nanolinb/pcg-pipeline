@@ -1134,10 +1134,16 @@ func _set_vec3_spins(box: HBoxContainer, value: Vector3) -> void:
 
 
 func _build_ui() -> void:
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	add_child(scroll)
+	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var root := VBoxContainer.new()
 	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_theme_constant_override("separation", 6)
-	add_child(root)
+	scroll.add_child(root)
 
 	var task_row := HBoxContainer.new()
 	root.add_child(task_row)
@@ -1146,6 +1152,7 @@ func _build_ui() -> void:
 	task_label.custom_minimum_size = Vector2(90, 0)
 	task_row.add_child(task_label)
 	task_option = OptionButton.new()
+	task_option.clip_text = true
 	task_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	task_option.item_selected.connect(_on_task_selected)
 	task_row.add_child(task_option)
@@ -1161,7 +1168,10 @@ func _build_ui() -> void:
 	source_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	source_edit.placeholder_text = "res:// 或 user:// 路径，Mesh 或 PackedScene"
 	source_row.add_child(source_edit)
-	load_button = _small_button(source_row, "加载", _on_load_pressed)
+	load_button = Button.new()
+	load_button.text = "加载资源"
+	load_button.pressed.connect(_on_load_pressed)
+	root.add_child(load_button)
 	mesh_info_label = Label.new()
 	mesh_info_label.text = "未载入网格"
 	mesh_info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

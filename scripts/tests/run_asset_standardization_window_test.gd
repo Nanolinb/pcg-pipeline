@@ -51,6 +51,7 @@ func _main() -> void:
 	_cleanup()
 	_window = await _make_window()
 	await _check_window_opens_and_task_selection()
+	await _check_scroll_layout_at_small_size()
 	await _check_problem_meshes_blocked()
 	await _check_load_from_path()
 	await _check_calibration()
@@ -275,6 +276,42 @@ func _check_window_opens_and_task_selection() -> void:
 	await _capture("01_window_open")
 
 
+## 620×640 小窗布局：加载按钮在可视区域、ScrollContainer 可滚动。
+func _check_scroll_layout_at_small_size() -> void:
+	if _window == null:
+		_record(false, "scroll layout check skipped (window missing)")
+		return
+	var scrolls: Array = _window.find_children("*", "ScrollContainer", false, false)
+	_record(not scrolls.is_empty(), "root content lives in a full-window ScrollContainer")
+	if scrolls.is_empty():
+		return
+	var scroll: ScrollContainer = scrolls[0]
+	_record(_window.load_button.text == "加载资源", "standalone load button is labeled 加载资源")
+	_record(_window.task_option.clip_text, "task OptionButton clips long text")
+	_record(_window.load_button.get_parent() == scroll.get_child(0),
+		"load button placed at root level beside source row")
+	var original_min := _window.min_size
+	_window.min_size = Vector2i(620, 640)
+	_window.size = Vector2i(620, 640)
+	await process_frame
+	await process_frame
+	_record(_window.size == Vector2i(620, 640), "window shrinks to 620x640", str(_window.size))
+	var visible_rect: Rect2 = scroll.get_global_rect()
+	_record(_window.load_button.is_visible_in_tree(), "load button visible at 620x640")
+	_record(visible_rect.intersects(_window.load_button.get_global_rect()),
+		"load button inside visible area at 620x640",
+		"button=%s visible=%s" % [str(_window.load_button.get_global_rect()), str(visible_rect)])
+	var vbar := scroll.get_v_scroll_bar()
+	_record(vbar.max_value > vbar.page, "ScrollContainer is scrollable at 620x640",
+		"max=%f page=%f" % [vbar.max_value, vbar.page])
+	scroll.scroll_vertical = 120
+	await process_frame
+	_record(scroll.scroll_vertical > 0, "ScrollContainer vertical scrolling works")
+	scroll.scroll_vertical = 0
+	await process_frame
+	_window.min_size = original_min
+
+
 func _check_problem_meshes_blocked() -> void:
 	if _window == null or not _window.resolved:
 		_record(false, "problem mesh checks skipped (window missing shared API)")
@@ -306,9 +343,11 @@ func _check_load_from_path() -> void:
 	var mesh_path := TEMP_DIR + "/candidate_box.tres"
 	_record(ResourceSaver.save(_box_mesh(Vector3(1.2, 2.4, 0.3), -0.3), mesh_path) == OK,
 		"mesh resource saved for path loading", mesh_path)
-	var result: Dictionary = _window.load_source_from_path(mesh_path)
-	_record(result.get("ok", false) and String(result.get("kind", "")) == "mesh",
-		"Mesh resource loads from path", String(result.get("error", "")))
+	# 通过“加载资源”按钮的真实 pressed 信号驱动，而非只直接调用函数。
+	_window.source_edit.text = mesh_path
+	_window.load_button.pressed.emit()
+	_record(_window.source_mesh != null and _window.status_label.text.begins_with("Mesh 已载入"),
+		"Mesh resource loads via 加载资源 button", _window.status_label.text)
 	var scene := PackedScene.new()
 	var holder := MeshInstance3D.new()
 	holder.mesh = _box_mesh(Vector3(1.2, 2.4, 0.3), -0.3)
@@ -318,11 +357,15 @@ func _check_load_from_path() -> void:
 	_record(scene.pack(wrapper) == OK, "packed scene built for path loading")
 	var scene_path := TEMP_DIR + "/candidate_scene.tscn"
 	_record(ResourceSaver.save(scene, scene_path) == OK, "packed scene saved", scene_path)
-	result = _window.load_source_from_path(scene_path)
-	_record(result.get("ok", false) and String(result.get("kind", "")) == "packed_scene",
-		"PackedScene mesh loads from path", String(result.get("error", "")))
-	result = _window.load_source_from_path("res://does/not/exist.tres")
-	_record(not result.get("ok", false), "missing resource path reports failure")
+	_window.source_edit.text = scene_path
+	_window.load_button.pressed.emit()
+	_record(_window.source_mesh != null
+		and _window.status_label.text.begins_with("PackedScene 网格已载入"),
+		"PackedScene mesh loads via 加载资源 button", _window.status_label.text)
+	_window.source_edit.text = "res://does/not/exist.tres"
+	_window.load_button.pressed.emit()
+	_record(_window.status_label.text.begins_with("加载失败"),
+		"missing resource path reports failure via button", _window.status_label.text)
 
 
 func owner_set(node: Node, owner: Node) -> void:
@@ -455,6 +498,12 @@ func _check_publish_and_reload() -> void:
 	var manifest: Dictionary = published.get("manifest", {})
 	_record(manifest.get("lods", {}).keys().size() == 2,
 		"publish manifest records lod1/lod2 generation detail")
+	if _capture_mode:
+		var scrolls: Array = _window.find_children("*", "ScrollContainer", false, false)
+		if not scrolls.is_empty():
+			var sc := scrolls[0] as ScrollContainer
+			sc.scroll_vertical = int(sc.get_v_scroll_bar().max_value)
+			await process_frame
 	await _capture("04_published")
 	var json := JSON.new()
 	_record(json.parse(FileAccess.get_file_as_string(path)) == OK and json.data is Dictionary,
