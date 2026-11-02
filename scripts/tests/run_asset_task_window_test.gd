@@ -28,6 +28,7 @@ func _main() -> void:
 	await _check_save_and_reload()
 	await _check_reopen_lists_saved_tasks()
 	await _check_bad_file_does_not_crash()
+	_check_production_example_selection()
 	print("ASSET_TASK_CHECKS: %d run, %d failed" % [checks_run, failures.size()])
 	_cleanup()
 	if failures.is_empty():
@@ -232,6 +233,17 @@ func _check_bad_file_does_not_crash() -> void:
 		if StringName(task.task_id) == &"task_ui_arch_door" or StringName(task.task_id) == &"task_ui_pipe_valve":
 			still_valid += 1
 	_record(still_valid == 2, "bad file does not silently drop valid tasks", "valid=%d" % still_valid)
+
+func _check_production_example_selection() -> void:
+	if _window == null or not _window.resolved:
+		_record(false, "production example selection skipped")
+		return
+	_window.open_tasks("res://assets/tasks")
+	_record(_window.tasks.size() == 4, "production examples loaded", "count=%d" % _window.tasks.size())
+	for index in _window.tasks.size():
+		_window._on_task_selected(index)
+		_record(_window.current_task == _window.tasks[index], "example selection keeps valid task %d" % index)
+		_record(_window.validation_list.item_count == 0, "example selection validates cleanly %d" % index)
 
 func _cleanup_directory() -> void:
 	var dir := DirAccess.open(TEST_DIRECTORY)

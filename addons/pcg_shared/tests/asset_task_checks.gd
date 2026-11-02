@@ -193,6 +193,13 @@ func _check_uv_collision_candidates() -> void:
 		and defaults.candidate_refs.is_empty(),
 		"policies: defaults are world_scale/box with empty candidates")
 
+	var hot_reload := PCGAssetTask.new()
+	hot_reload.set("uv_policy", null)
+	hot_reload.set("collision_policy", null)
+	var hot_errors := hot_reload.validation_errors()
+	_record(_errors_contain(hot_errors, "uv_policy") and _errors_contain(hot_errors, "collision_policy"),
+		"policies: nil fields during hot reload report errors without crashing")
+
 	var bad := _valid_task(&"task_bad_policies")
 	bad.uv_policy = &"stretch"
 	bad.collision_policy = &"mesh"

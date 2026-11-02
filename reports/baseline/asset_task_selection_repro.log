@@ -1,0 +1,44 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+ASSET_TASK_BEGIN: asset task window UI/integration checks
+ASSET_TASK_CHECK_PASS: editor_plugin.gd compiles with asset task integration (res://addons/surface_components/editor_plugin.gd)
+ASSET_TASK_CHECK_PASS: editor_plugin.gd exposes open_asset_tasks()
+ASSET_TASK_CHECK_PASS: dock.gd adds 资产任务 button (res://addons/surface_components/dock.gd)
+ASSET_TASK_CHECK_PASS: window title is 规范标题 (L0 资产任务与精度规范)
+ASSET_TASK_CHECK_PASS: shared PCGAssetTaskStore instance created
+ASSET_TASK_CHECK_PASS: task selector/new/save/reload/validation controls exist
+ASSET_TASK_CHECK_PASS: form covers required task fields
+ASSET_TASK_CHECK_PASS: window popup visible after open_tasks
+ASSET_TASK_CHECK_PASS: empty task directory lists zero tasks
+ASSET_TASK_CHECK_PASS: 新建 creates a draft PCGAssetTask
+ASSET_TASK_CHECK_PASS: new task starts as draft
+ASSET_TASK_CHECK_PASS: blank task shows validation errors when assigned
+ASSET_TASK_CHECK_PASS: save blocked while validation errors exist
+ASSET_TASK_CHECK_PASS: complete form passes draft validation
+ASSET_TASK_CHECK_PASS: save enabled after draft validation passes
+ASSET_TASK_CHECK_PASS: complete AI task passes assignment validation (status=assigned)
+ASSET_TASK_CHECK_PASS: 保存成功状态反馈 (已保存: user://pcg_asset_task_window_test/task_ui_arch_door.task.json)
+ASSET_TASK_CHECK_PASS: task file written to temp directory (user://pcg_asset_task_window_test)
+ASSET_TASK_CHECK_PASS: store lists one saved task (count=1)
+ASSET_TASK_CHECK_PASS: saved task round-trips budgets and texture size
+ASSET_TASK_CHECK_PASS: saved task round-trips purpose and interface requirements
+ASSET_TASK_CHECK_PASS: saved task round-trips uv_policy and collision_policy
+ASSET_TASK_CHECK_PASS: saved task round-trips candidate_refs
+ASSET_TASK_CHECK_PASS: 重开 restores saved values and discards edits
+ASSET_TASK_CHECK_PASS: 重开 restores candidate_refs and discards edits
+ASSET_TASK_CHECK_PASS: 重开 reloads task object from disk
+ASSET_TASK_CHECK_PASS: second task grows store listing (count=2)
+ASSET_TASK_CHECK_PASS: reopened window lists both saved tasks (items=2)
+ASSET_TASK_CHECK_PASS: bad task file written
+ASSET_TASK_CHECK_PASS: bad file does not silently drop valid tasks (valid=2)
+ASSET_TASK_CHECK_PASS: production examples loaded (count=4)
+ASSET_TASK_CHECK_PASS: example selection keeps valid task 0
+ASSET_TASK_CHECK_PASS: example selection validates cleanly 0
+ASSET_TASK_CHECK_PASS: example selection keeps valid task 1
+ASSET_TASK_CHECK_PASS: example selection validates cleanly 1
+ASSET_TASK_CHECK_PASS: example selection keeps valid task 2
+ASSET_TASK_CHECK_PASS: example selection validates cleanly 2
+ASSET_TASK_CHECK_PASS: example selection keeps valid task 3
+ASSET_TASK_CHECK_PASS: example selection validates cleanly 3
+ASSET_TASK_CHECKS: 39 run, 0 failed
+ASSET_TASK_RESULT: PASS

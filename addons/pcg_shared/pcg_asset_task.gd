@@ -72,17 +72,17 @@ func validation_errors(for_assignment: bool = false) -> Array[String]:
 		regex.compile(ID_PATTERN)
 		if regex.search(String(task_id)) == null:
 			problems.append("task_id \"%s\" must use lowercase ascii letters, digits, '_' or '-' only" % String(task_id))
-	if not CATEGORIES.has(category):
+	if not CATEGORIES.has(StringName(String(category))):
 		problems.append("category \"%s\" not in %s" % [String(category), ", ".join(CATEGORIES)])
-	if not PRODUCERS.has(producer):
+	if not PRODUCERS.has(StringName(String(producer))):
 		problems.append("producer \"%s\" not in %s" % [String(producer), ", ".join(PRODUCERS)])
-	if not PRECISION_TIERS.has(precision_tier):
+	if not PRECISION_TIERS.has(StringName(String(precision_tier))):
 		problems.append("precision_tier \"%s\" not in %s" % [String(precision_tier), ", ".join(PRECISION_TIERS)])
-	if not STATUSES.has(status):
+	if not STATUSES.has(StringName(String(status))):
 		problems.append("status \"%s\" not in %s" % [String(status), ", ".join(STATUSES)])
-	if not UV_POLICIES.has(uv_policy):
+	if not UV_POLICIES.has(StringName(String(uv_policy))):
 		problems.append("uv_policy \"%s\" not in %s" % [String(uv_policy), ", ".join(UV_POLICIES)])
-	if not COLLISION_POLICIES.has(collision_policy):
+	if not COLLISION_POLICIES.has(StringName(String(collision_policy))):
 		problems.append("collision_policy \"%s\" not in %s" % [String(collision_policy), ", ".join(COLLISION_POLICIES)])
 	var seen_candidates := {}
 	for ref in candidate_refs:

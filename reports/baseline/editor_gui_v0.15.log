@@ -3,3 +3,81 @@ OpenGL API 4.1 Metal - 90.5 - Compatibility - Using Device: Apple - Apple M3 Pro
 
 WARNING: Detected another project.godot at res://PipeWeaver. The folder will be ignored.
      at: _should_skip_directory (editor/file_system/editor_file_system.cpp:3458)
+ERROR: Attempted to use 'has' a variable of type 'Nil' into a TypedArray of type 'StringName'.
+   at: _internal_validate (core/variant/container_type_validate.h:72)
+   GDScript backtrace (most recent call first):
+       [0] validation_errors (res://addons/pcg_shared/pcg_asset_task.gd:83)
+       [1] _refresh_validation (res://addons/surface_components/asset_task_window.gd:397)
+       [2] _on_task_selected (res://addons/surface_components/asset_task_window.gd:419)
+ERROR: Condition "!_p->typed.validate(value, "use 'has'")" is true. Returning: false
+   at: has (core/variant/array.cpp:499)
+   GDScript backtrace (most recent call first):
+       [0] validation_errors (res://addons/pcg_shared/pcg_asset_task.gd:83)
+       [1] _refresh_validation (res://addons/surface_components/asset_task_window.gd:397)
+       [2] _on_task_selected (res://addons/surface_components/asset_task_window.gd:419)
+ERROR: Attempted to use 'has' a variable of type 'Nil' into a TypedArray of type 'StringName'.
+   at: _internal_validate (core/variant/container_type_validate.h:72)
+   GDScript backtrace (most recent call first):
+       [0] validation_errors (res://addons/pcg_shared/pcg_asset_task.gd:85)
+       [1] _refresh_validation (res://addons/surface_components/asset_task_window.gd:397)
+       [2] _on_task_selected (res://addons/surface_components/asset_task_window.gd:419)
+ERROR: Condition "!_p->typed.validate(value, "use 'has'")" is true. Returning: false
+   at: has (core/variant/array.cpp:499)
+   GDScript backtrace (most recent call first):
+       [0] validation_errors (res://addons/pcg_shared/pcg_asset_task.gd:85)
+       [1] _refresh_validation (res://addons/surface_components/asset_task_window.gd:397)
+       [2] _on_task_selected (res://addons/surface_components/asset_task_window.gd:419)
+
+================================================================
+handle_crash: Program crashed with signal 11
+Engine version: Godot Engine v4.6.2.stable.official (71f334935c000924d403448e698df4441130df18)
+Dumping the backtrace. Please include this when reporting the bug on: https://github.com/godotengine/godot/issues
+[1] 1   libsystem_platform.dylib            0x0000000183c29744 _sigtramp + 56
+[2] GDScriptFunction::call(GDScriptInstance*, Variant const**, int, Callable::CallError&, GDScriptFunction::CallState*) (in Godot) + 19172
+[3] GDScriptInstance::callp(StringName const&, Variant const**, int, Callable::CallError&) (in Godot) + 224
+[4] Object::callp(StringName const&, Variant const**, int, Callable::CallError&) (in Godot) + 184
+[5] Variant::callp(StringName const&, Variant const**, int, Variant&, Callable::CallError&) (in Godot) + 272
+[6] GDScriptFunction::call(GDScriptInstance*, Variant const**, int, Callable::CallError&, GDScriptFunction::CallState*) (in Godot) + 42832
+[7] GDScriptInstance::callp(StringName const&, Variant const**, int, Callable::CallError&) (in Godot) + 224
+[8] Object::callp(StringName const&, Variant const**, int, Callable::CallError&) (in Godot) + 184
+[9] Variant::callp(StringName const&, Variant const**, int, Variant&, Callable::CallError&) (in Godot) + 272
+[10] GDScriptFunction::call(GDScriptInstance*, Variant const**, int, Callable::CallError&, GDScriptFunction::CallState*) (in Godot) + 42792
+[11] GDScriptInstance::callp(StringName const&, Variant const**, int, Callable::CallError&) (in Godot) + 224
+[12] Object::callp(StringName const&, Variant const**, int, Callable::CallError&) (in Godot) + 184
+[13] Callable::callp(Variant const**, int, Variant&, Callable::CallError&) const (in Godot) + 224
+[14] Object::emit_signalp(StringName const&, Variant const**, int) (in Godot) + 1568
+[15] OptionButton::_select(int, bool) (in Godot) + 584
+[16] Object::emit_signalp(StringName const&, Variant const**, int) (in Godot) + 1568
+[17] PopupMenu::activate_item(int) (in Godot) + 568
+[18] PopupMenu::_input_from_window_internal(Ref<InputEvent> const&) (in Godot) + 3548
+[19] PopupMenu::_input_from_window(Ref<InputEvent> const&) (in Godot) + 32
+[20] Window::_window_input(Ref<InputEvent> const&) (in Godot) + 496
+[21] GridMapEditorPlugin::make_visible(bool)
+[22] DisplayServerMacOS::_dispatch_input_event(Ref<InputEvent> const&)
+[23] DisplayServerMacOS::_dispatch_input_event(Ref<InputEvent> const&) (in Godot) + 568
+[24] Input::_parse_input_event_impl(Ref<InputEvent> const&, bool) (in Godot) + 4188
+[25] Input::flush_buffered_events() (in Godot) + 132
+[26] DisplayServerMacOS::_process_events(bool) (in Godot) + 804
+[27] OS_MacOS_NSApp::start_main()
+[28] 28  CoreFoundation                      0x0000000183cdc344 __CFRUNLOOP_IS_CALLING_OUT_TO_AN_OBSERVER_CALLBACK_FUNCTION__ + 36
+[29] 29  CoreFoundation                      0x0000000183cdc240 __CFRunLoopDoObservers + 648
+[30] 30  CoreFoundation                      0x0000000183cdb8ec __CFRunLoopRun + 924
+[31] 31  CoreFoundation                      0x0000000183dae264 _CFRunLoopRunSpecificWithOptions + 532
+[32] 32  HIToolbox                           0x0000000190ac7560 RunCurrentEventLoopInMode + 320
+[33] 33  HIToolbox                           0x0000000190aca8bc ReceiveNextEventCommon + 488
+[34] 34  HIToolbox                           0x0000000190c5414c _BlockUntilNextEventMatchingListInMode + 48
+[35] 35  AppKit                              0x00000001887be3d0 _DPSBlockUntilNextEventMatchingListInMode + 228
+[36] 36  AppKit                              0x0000000188112084 _DPSNextEvent + 576
+[37] 37  AppKit                              0x0000000188ca796c -[NSApplication(NSEventRouting) _nextEventMatchingEventMask:untilDate:inMode:dequeue:] + 688
+[38] 38  AppKit                              0x0000000188ca7678 -[NSApplication(NSEventRouting) nextEventMatchingMask:untilDate:inMode:dequeue:] + 72
+[39] 39  AppKit                              0x000000018810513c -[NSApplication run] + 368
+[40] main (in Godot) + 924
+[41] 41  dyld                                0x00000001838544e4 start + 6992
+-- END OF C++ BACKTRACE --
+================================================================
+GDScript backtrace (most recent call first):
+    [0] validation_errors (res://addons/pcg_shared/pcg_asset_task.gd:88)
+    [1] _refresh_validation (res://addons/surface_components/asset_task_window.gd:397)
+    [2] _on_task_selected (res://addons/surface_components/asset_task_window.gd:419)
+-- END OF GDSCRIPT BACKTRACE --
+================================================================
