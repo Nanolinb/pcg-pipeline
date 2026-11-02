@@ -67,3 +67,11 @@
 - 保存当前 `.tscn` 即应用到自己的场景。组件保存 `definition` 资产引用、相对 `wall_path`、锚点与编辑参数，重载时自动重建运行节点；不要直接保存或编辑生成的 CSG 子节点。
 - 新增或导入资产时，先按本手册预处理为封闭 Mesh 并创建 `PCGComponentDefinition`，放入 `assets/components/` 由目录统一加载。原始导入文件与组件定义分开管理，不能把任意开放 Mesh 直接拖入主体。
 - 定义文件使用稳定 `id`、尺寸、开洞、根部嵌入、材质 Profile 和消失阈值；场景实例只引用定义，不复制共享资产。
+
+## L1 占用与碰撞约定
+
+- 标准资产发布必须包含五类 AABB：`solid` 实体、`embed` 允许嵌入、`exclusion` 禁入、`clearance` 通行净空、`visual` 视觉保护区。
+- 五类区域随资产保存并重载校验；不能只依赖渲染包围盒代替所有语义。
+- 默认碰撞层位值：主体 `HOST=1`、可拾取 `PICKABLE=2`、玩家 `PLAYER=4`、嵌入体 `EMBEDDED=8`、禁入查询 `EXCLUSION=16`、白盒代理 `PROXY=32`。
+- 标准资产的实体碰撞默认 `collision_layer=HOST`、`collision_mask=PLAYER`；拾取和禁入查询不得复用玩家实体碰撞代替独立语义。
+- LOD1/2 使用真实减面或显式提供 Mesh。低于预算的直通和目标不可达的最佳结果必须在发布记录中披露，不得静默复制 LOD0 冒充减面。

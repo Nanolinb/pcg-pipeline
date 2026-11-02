@@ -50,6 +50,9 @@ func asset_path(asset_id: StringName, asset_directory: String = "") -> String:
 ## 发布一份标准资产。返回 {ok, path, errors, manifest}。
 ## fault 透传给 PCGAtomicStore 模拟 JSON 写入中断（测试用）。
 func publish(asset: PCGStandardAsset, asset_directory: String = "", fault: String = "") -> Dictionary:
+	# 占用区域缺省时由网格与 root_embed 推导；提供部分区域视为非法，交给校验拒绝。
+	if asset.occupancy.is_empty() and asset.normalized_mesh != null:
+		asset.occupancy = asset.derive_occupancy()
 	var errors: Array[String] = asset.validation_errors()
 	if not errors.is_empty():
 		return {"ok": false, "path": "", "errors": errors, "manifest": {}}

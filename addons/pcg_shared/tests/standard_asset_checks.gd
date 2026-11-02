@@ -24,6 +24,8 @@ func run(log_prefix: String = LOG_PREFIX) -> Dictionary:
 	_check_preview_transform_plane()
 	_check_preview_three_hosts()
 	_check_whitebox_and_collision()
+	_check_collision_layers()
+	_check_occupancy_zones()
 	_check_missing_dependencies()
 	return {"checks_run": checks_run, "failures": failures.duplicate()}
 
@@ -48,16 +50,17 @@ func _errors_contain(errors: Array, needle: String) -> bool:
 # ------------------------------------------------------------------ 测试夹具
 
 func _grid_mesh(segments: int = 16) -> ArrayMesh:
-	# segments×segments 网格平面（x,z ∈ [0,1]，512 三角形 @16），顶点有真实起伏，
-	# 保证减面是几何操作而非边界特例。
+	# segments×segments 网格平面（x ∈ [0,1]、z ∈ [-0.5,0.5]，y 有真实起伏），
+	# 跨过根部平面（z=0）：+z 朝外、-z 嵌入侧，保证 occupancy 推导
+	# 与减面都是几何操作而非边界特例。
 	var surface_tool := SurfaceTool.new()
 	surface_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for z in segments:
 		for x in segments:
-			var p00 := Vector3(float(x) / segments, 0.02 * sin(x * 1.7) * cos(z * 2.3), float(z) / segments)
-			var p10 := Vector3(float(x + 1) / segments, 0.02 * sin((x + 1) * 1.7) * cos(z * 2.3), float(z) / segments)
-			var p01 := Vector3(float(x) / segments, 0.02 * sin(x * 1.7) * cos((z + 1) * 2.3), float(z + 1) / segments)
-			var p11 := Vector3(float(x + 1) / segments, 0.02 * sin((x + 1) * 1.7) * cos((z + 1) * 2.3), float(z + 1) / segments)
+			var p00 := Vector3(float(x) / segments, 0.02 * sin(x * 1.7) * cos(z * 2.3), float(z) / segments - 0.5)
+			var p10 := Vector3(float(x + 1) / segments, 0.02 * sin((x + 1) * 1.7) * cos(z * 2.3), float(z) / segments - 0.5)
+			var p01 := Vector3(float(x) / segments, 0.02 * sin(x * 1.7) * cos((z + 1) * 2.3), float(z + 1) / segments - 0.5)
+			var p11 := Vector3(float(x + 1) / segments, 0.02 * sin((x + 1) * 1.7) * cos((z + 1) * 2.3), float(z + 1) / segments - 0.5)
 			surface_tool.add_vertex(p00)
 			surface_tool.add_vertex(p10)
 			surface_tool.add_vertex(p11)
@@ -129,6 +132,7 @@ func _check_model_validation() -> void:
 		"validation: blank asset fails publish with per-field errors", "%d errors" % errors.size())
 
 	var valid := _valid_asset()
+	valid.occupancy = valid.derive_occupancy()
 	_record(valid.validation_errors().is_empty(),
 		"validation: complete asset passes publish validation")
 
@@ -200,6 +204,12 @@ func _check_lod_real_decimation() -> void:
 		and passthrough["faces_out"] == 512,
 		"lod: below-budget passthrough is explicit, not silent")
 
+	var best_effort: Dictionary = PCGMeshLod.decimate(mesh, 1)
+	_record(best_effort["ok"] and String(best_effort.get("warning", "")) != ""
+		and int(best_effort["faces_out"]) < 512,
+		"lod: unreachable target falls back to real best-effort decimation with explicit warning",
+		String(best_effort.get("warning", "")))
+
 	var empty := ArrayMesh.new()
 	var no_cap: Dictionary = PCGMeshLod.capability(empty)
 	_record(not no_cap["ok"] and _errors_contain(no_cap["errors"], "no surfaces"),
@@ -247,9 +257,14 @@ func _check_publish_reload_roundtrip() -> void:
 		and int(lods["lod1"]["faces_out"]) < 512 and int(lods["lod2"]["faces_out"]) < int(lods["lod1"]["faces_out"]),
 		"publish: auto LOD manifest shows real reduction",
 		"lod1=%s lod2=%s" % [lods["lod1"]["faces_out"], lods["lod2"]["faces_out"]])
-	_record(String(lods["lod2"].get("warning", "")).contains("unreachable"),
-		"publish: best-effort LOD below target is disclosed in manifest, not silent",
-		String(lods["lod2"].get("warning", "")))
+	var disclosed := true
+	for level in ["lod1", "lod2"]:
+		var entry: Dictionary = lods[level]
+		if int(entry["faces_out"]) > int(entry["target_faces"]) \
+			and String(entry.get("warning", "")).is_empty():
+			disclosed = false
+	_record(disclosed,
+		"publish: best-effort LOD below target is disclosed in manifest, not silent")
 
 	var loaded: Dictionary = store.load_asset(path)
 	var asset2: PCGStandardAsset = loaded["asset"]
@@ -267,6 +282,8 @@ func _check_publish_reload_roundtrip() -> void:
 		"reload: every metadata field round-trips")
 	_record(asset2.acceptance_report == asset.acceptance_report,
 		"reload: acceptance report round-trips")
+	_record(asset2.occupancy == asset.occupancy and asset2.occupancy.size() == 5,
+		"reload: occupancy zones round-trip (derived at publish)")
 	_record(asset2.lod_status == PackedStringArray(["auto", "auto"]),
 		"reload: lod status recorded as auto")
 	_record(asset2.normalized_mesh != null and asset2.lod1_mesh != null
@@ -481,6 +498,150 @@ func _check_whitebox_and_collision() -> void:
 	_record(found, "collision: preview carries box body centered on AABB")
 	preview.free()
 	preview2.free()
+
+
+# ---------------------------------------------------------- 碰撞层约定
+
+func _check_collision_layers() -> void:
+	_record(PCGSurfacePreview.COLLISION_LAYER_HOST == 1
+		and PCGSurfacePreview.COLLISION_LAYER_PICKABLE == 2
+		and PCGSurfacePreview.COLLISION_LAYER_PLAYER == 4
+		and PCGSurfacePreview.COLLISION_LAYER_EMBEDDED == 8
+		and PCGSurfacePreview.COLLISION_LAYER_EXCLUSION == 16
+		and PCGSurfacePreview.COLLISION_LAYER_PROXY == 32,
+		"layers: HOST/PICKABLE/PLAYER/EMBEDDED/EXCLUSION/PROXY = 1/2/4/8/16/32")
+	var asset := _valid_asset("asset_layers")
+	var host := PCGSurfaceHostData.new()
+	host.configure_plane(Vector3(6.0, 4.6, 0.36))
+	for policy in [&"box", &"convex", &"concave"]:
+		asset.collision_policy = policy
+		var preview := PCGSurfacePreview.build_surface_preview(asset, host, Vector2(0.1, 0.1))
+		var body := _single_body(preview)
+		_record(body != null and body.collision_layer == PCGSurfacePreview.COLLISION_LAYER_HOST
+			and body.collision_mask == PCGSurfacePreview.COLLISION_LAYER_PLAYER,
+			"layers: %s-policy body on HOST layer masking PLAYER" % String(policy))
+		preview.free()
+
+
+func _single_body(preview: MeshInstance3D) -> StaticBody3D:
+	for child in preview.get_children():
+		if child is StaticBody3D:
+			return child
+	return null
+
+
+# ---------------------------------------------------------- 五类占用区域
+
+func _check_occupancy_zones() -> void:
+	var store := PCGStandardAssetStore.new()
+	# 推导：网格 AABB x∈[0,1]、z∈[-0.5,0.5]（跨过根部平面），
+	# outward=BACK(+z) → 嵌入区为 z∈[-root_embed, 0] 板区。
+	var dir := _test_dir("occupancy_derived")
+	var asset := _valid_asset("asset_occ_derived")
+	asset.root_embed = 0.1
+	_record(asset.occupancy.is_empty(), "occupancy: fixture starts without zones")
+	var published: Dictionary = store.publish(asset, dir)
+	_record(published["ok"], "occupancy: publish derives zones from mesh/root_embed")
+	if not published["ok"]:
+		_record(false, "occupancy: aborted", "; ".join(published["errors"]))
+		return
+	var solid: AABB = asset.occupancy_zone("solid")
+	var aabb := asset.mesh_aabb()
+	_record(solid.position.distance_to(aabb.position) < 0.0001
+		and solid.size.distance_to(aabb.size) < 0.0001,
+		"occupancy: solid zone equals mesh AABB")
+	var embed: AABB = asset.occupancy_zone("embed")
+	_record(is_equal_approx(embed.position.z, -0.1) and is_equal_approx(embed.size.z, 0.1)
+		and is_equal_approx(embed.end.z, 0.0)
+		and is_equal_approx(embed.size.x, solid.size.x),
+		"occupancy: embed zone is the root_embed slab on the inward side")
+	var exclusion: AABB = asset.occupancy_zone("exclusion")
+	var clearance: AABB = asset.occupancy_zone("clearance")
+	var visual: AABB = asset.occupancy_zone("visual")
+	_record(_contains(exclusion, embed), "occupancy: exclusion contains embed zone")
+	_record(_contains(clearance, solid), "occupancy: clearance contains solid zone")
+	_record(visual.size.x > solid.size.x and is_equal_approx(visual.size.x - solid.size.x, 2.0 * PCGStandardAsset.VISUAL_MARGIN),
+		"occupancy: visual zone grown by VISUAL_MARGIN")
+	_record(asset.occupancy.keys().size() == 5, "occupancy: exactly five zones serialized")
+
+	# 重载：推导值原样保留。
+	var loaded: Dictionary = store.load_asset(published["path"])
+	_record(loaded["ok"] and (loaded["asset"] as PCGStandardAsset).occupancy == asset.occupancy,
+		"occupancy: derived zones survive reload")
+
+	# 显式区域优先于推导，且往返一致。
+	var dir2 := _test_dir("occupancy_explicit")
+	var custom := {}
+	for slot in PCGStandardAsset.OCCUPANCY_SLOTS:
+		custom[slot] = PCGStandardAsset.serialize_aabb(AABB(Vector3(-1, -1, -1), Vector3(2, 2, 2)))
+	custom["clearance"] = PCGStandardAsset.serialize_aabb(AABB(Vector3(-2, -2, -2), Vector3(4, 4, 4)))
+	var asset2 := _valid_asset("asset_occ_explicit")
+	asset2.occupancy = custom.duplicate()
+	var published2: Dictionary = store.publish(asset2, dir2)
+	_record(published2["ok"], "occupancy: explicit zones publish without derivation")
+	if published2["ok"]:
+		var loaded2: Dictionary = store.load_asset(published2["path"])
+		_record(loaded2["ok"] and (loaded2["asset"] as PCGStandardAsset).occupancy == custom,
+			"occupancy: explicit zones round-trip through reload")
+	else:
+		_record(false, "occupancy: explicit publish aborted", "; ".join(published2["errors"]))
+
+	# root_embed=0 → 零尺寸嵌入占位合法。
+	var dir3 := _test_dir("occupancy_zero_embed")
+	var asset3 := _valid_asset("asset_occ_zero")
+	asset3.root_embed = 0.0
+	var published3: Dictionary = store.publish(asset3, dir3)
+	_record(published3["ok"] and (published3["ok"] and store.load_asset(published3["path"])["ok"]),
+		"occupancy: zero root_embed yields legal zero-size embed placeholder")
+
+	# 非法区域：min>max / 缺槽位 / 未知槽位 → 发布拒绝且不触碰磁盘。
+	var bad_size := _valid_asset("asset_occ_bad_size")
+	bad_size.occupancy = PCGStandardAsset.new().derive_occupancy()
+	bad_size.occupancy["solid"] = {"min": [1, 1, 1], "max": [0, 0, 0]}
+	var refused: Dictionary = store.publish(bad_size, _test_dir("occupancy_bad_size"))
+	_record(not refused["ok"] and _errors_contain(refused["errors"], "min <= max")
+		and not FileAccess.file_exists("user://pcg_standard_asset_test/occupancy_bad_size/asset_occ_bad_size.asset.json"),
+		"occupancy: min > max zone refused before touching disk")
+
+	var missing_slot := _valid_asset("asset_occ_missing")
+	missing_slot.occupancy = {"solid": PCGStandardAsset.serialize_aabb(AABB())}
+	var refused2: Dictionary = store.publish(missing_slot, _test_dir("occupancy_missing"))
+	_record(not refused2["ok"] and _errors_contain(refused2["errors"], "missing zone"),
+		"occupancy: incomplete zones refused")
+
+	var unknown_slot := _valid_asset("asset_occ_unknown")
+	unknown_slot.occupancy = _five_zones()
+	unknown_slot.occupancy["phantom"] = PCGStandardAsset.serialize_aabb(AABB())
+	var refused3: Dictionary = store.publish(unknown_slot, _test_dir("occupancy_unknown"))
+	_record(not refused3["ok"] and _errors_contain(refused3["errors"], "unknown zone"),
+		"occupancy: unknown zone refused")
+
+	# 加载校验：手写剥离/置 null 的 occupancy 在 from_dict 即拒绝。
+	var hot_data := _valid_asset("asset_occ_hot").to_dict()
+	hot_data["occupancy"] = null
+	var hot := PCGStandardAsset.new()
+	_record(_errors_contain(hot.from_dict(hot_data), "occupancy"),
+		"occupancy: null occupancy during reload rejected without crash")
+	var hot_data2 := _valid_asset("asset_occ_hot2").to_dict()
+	(hot_data2["occupancy"] as Dictionary)["solid"] = null
+	var hot2 := PCGStandardAsset.new()
+	_record(_errors_contain(hot2.from_dict(hot_data2), "occupancy"),
+		"occupancy: null zone value during reload rejected without crash")
+
+
+func _five_zones() -> Dictionary:
+	var zones := {}
+	for slot in PCGStandardAsset.OCCUPANCY_SLOTS:
+		zones[slot] = PCGStandardAsset.serialize_aabb(AABB())
+	return zones
+
+
+func _contains(outer: AABB, inner: AABB) -> bool:
+	var inner_end := inner.position + inner.size
+	var outer_end := outer.position + outer.size
+	return outer.position.x <= inner.position.x + 0.0001 and outer.position.y <= inner.position.y + 0.0001 \
+		and outer.position.z <= inner.position.z + 0.0001 and outer_end.x >= inner_end.x - 0.0001 \
+		and outer_end.y >= inner_end.y - 0.0001 and outer_end.z >= inner_end.z - 0.0001
 
 
 # ---------------------------------------------------------- 缺失依赖拒绝

@@ -1,7 +1,7 @@
 
 GATE_BEGIN: project versions
-GATE_VERSION: /Users/shaunlin/Kimi Space/PCG管道/project.godot = 0.15.1
-GATE_VERSION: /Users/shaunlin/Kimi Space/PCG管道/PipeWeaver/project.godot = 0.15.1
+GATE_VERSION: /Users/shaunlin/Kimi Space/PCG管道/project.godot = 0.16.0
+GATE_VERSION: /Users/shaunlin/Kimi Space/PCG管道/PipeWeaver/project.godot = 0.16.0
 GATE_PASS: project versions
 
 GATE_BEGIN: Surface Component headless smoke
@@ -411,7 +411,7 @@ GATE_BEGIN: standard asset publishing
 Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
 
 STD_ASSET_BEGIN: standard asset publish/reload/trial-fit checks
-STD_ASSET_CHECK_PASS: validation: blank asset fails publish with per-field errors (6 errors)
+STD_ASSET_CHECK_PASS: validation: blank asset fails publish with per-field errors (7 errors)
 STD_ASSET_CHECK_PASS: validation: complete asset passes publish validation
 STD_ASSET_CHECK_PASS: validation: missing acceptance report rejected
 STD_ASSET_CHECK_PASS: validation: unknown verdict rejected
@@ -420,21 +420,23 @@ STD_ASSET_CHECK_PASS: validation: ai asset without provenance rejected
 STD_ASSET_CHECK_PASS: validation: null policy fields during reload report errors without crashing
 STD_ASSET_CHECK_PASS: validation: future format_version rejected without half-built asset (asset schema too new: format_version 99 > 1)
 STD_ASSET_CHECK_PASS: lod: capability reports 512 faces (faces=512)
-STD_ASSET_CHECK_PASS: lod: decimation truly reduces faces (512 -> 77 (cell 0.3537))
+STD_ASSET_CHECK_PASS: lod: decimation truly reduces faces (512 -> 90 (cell 0.3537))
 STD_ASSET_CHECK_PASS: lod: decimated mesh is a new real mesh, not the LOD0 reference
-STD_ASSET_CHECK_PASS: lod: decimated vertex count strictly smaller (289 -> 18)
+STD_ASSET_CHECK_PASS: lod: decimated vertex count strictly smaller (289 -> 24)
 STD_ASSET_CHECK_PASS: lod: below-budget passthrough is explicit, not silent
+STD_ASSET_CHECK_PASS: lod: unreachable target falls back to real best-effort decimation with explicit warning (target 1 faces unreachable (best 17); best-effort decimation)
 STD_ASSET_CHECK_PASS: lod: empty mesh fails capability check
 STD_ASSET_CHECK_PASS: lod: non-triangle primitive fails capability check
 STD_ASSET_CHECK_PASS: lod: capability failure tells caller to supply explicit LOD
 STD_ASSET_CHECK_PASS: publish: valid asset publishes (user://pcg_standard_asset_test/roundtrip/asset_roundtrip.asset.json)
 STD_ASSET_CHECK_PASS: publish: JSON + all four mesh files on disk
 STD_ASSET_CHECK_PASS: publish: no temp residue after commit
-STD_ASSET_CHECK_PASS: publish: auto LOD manifest shows real reduction (lod1=77 lod2=39)
-STD_ASSET_CHECK_PASS: publish: best-effort LOD below target is disclosed in manifest, not silent (target 32 faces unreachable (best 39); best-effort decimation)
+STD_ASSET_CHECK_PASS: publish: auto LOD manifest shows real reduction (lod1=90 lod2=17)
+STD_ASSET_CHECK_PASS: publish: best-effort LOD below target is disclosed in manifest, not silent
 STD_ASSET_CHECK_PASS: reload: published asset loads
 STD_ASSET_CHECK_PASS: reload: every metadata field round-trips
 STD_ASSET_CHECK_PASS: reload: acceptance report round-trips
+STD_ASSET_CHECK_PASS: reload: occupancy zones round-trip (derived at publish)
 STD_ASSET_CHECK_PASS: reload: lod status recorded as auto
 STD_ASSET_CHECK_PASS: reload: all four meshes attached
 STD_ASSET_CHECK_PASS: reload: reloaded LODs keep real decimated geometry
@@ -475,6 +477,27 @@ STD_ASSET_CHECK_PASS: collision: concave policy yields per-triangle faces
 STD_ASSET_CHECK_PASS: collision: none policy yields no shape
 STD_ASSET_CHECK_PASS: collision: none policy adds no body to preview
 STD_ASSET_CHECK_PASS: collision: preview carries box body centered on AABB
+STD_ASSET_CHECK_PASS: layers: HOST/PICKABLE/PLAYER/EMBEDDED/EXCLUSION/PROXY = 1/2/4/8/16/32
+STD_ASSET_CHECK_PASS: layers: box-policy body on HOST layer masking PLAYER
+STD_ASSET_CHECK_PASS: layers: convex-policy body on HOST layer masking PLAYER
+STD_ASSET_CHECK_PASS: layers: concave-policy body on HOST layer masking PLAYER
+STD_ASSET_CHECK_PASS: occupancy: fixture starts without zones
+STD_ASSET_CHECK_PASS: occupancy: publish derives zones from mesh/root_embed
+STD_ASSET_CHECK_PASS: occupancy: solid zone equals mesh AABB
+STD_ASSET_CHECK_PASS: occupancy: embed zone is the root_embed slab on the inward side
+STD_ASSET_CHECK_PASS: occupancy: exclusion contains embed zone
+STD_ASSET_CHECK_PASS: occupancy: clearance contains solid zone
+STD_ASSET_CHECK_PASS: occupancy: visual zone grown by VISUAL_MARGIN
+STD_ASSET_CHECK_PASS: occupancy: exactly five zones serialized
+STD_ASSET_CHECK_PASS: occupancy: derived zones survive reload
+STD_ASSET_CHECK_PASS: occupancy: explicit zones publish without derivation
+STD_ASSET_CHECK_PASS: occupancy: explicit zones round-trip through reload
+STD_ASSET_CHECK_PASS: occupancy: zero root_embed yields legal zero-size embed placeholder
+STD_ASSET_CHECK_PASS: occupancy: min > max zone refused before touching disk
+STD_ASSET_CHECK_PASS: occupancy: incomplete zones refused
+STD_ASSET_CHECK_PASS: occupancy: unknown zone refused
+STD_ASSET_CHECK_PASS: occupancy: null occupancy during reload rejected without crash
+STD_ASSET_CHECK_PASS: occupancy: null zone value during reload rejected without crash
 STD_ASSET_CHECK_PASS: deps: publish without mesh refused before touching disk
 STD_ASSET_CHECK_PASS: deps: publish without acceptance report refused
 STD_ASSET_CHECK_PASS: deps: publish with unknown enums refused
@@ -487,7 +510,7 @@ STD_ASSET_CHECK_PASS: deps: list keeps valid asset, skips broken (count=1)
 STD_ASSET_CHECK_PASS: deps: list reports the broken file (asset_broken.asset.json: invalid field: dimensions must be [x, y, z]; invalid fi)
 STD_ASSET_CHECK_PASS: atomic: injected JSON write interruption fails publish
 STD_ASSET_CHECK_PASS: atomic: interrupted publish cleans all mesh files, no half product
-STD_ASSET_CHECKS: 76 run, 0 failed
+STD_ASSET_CHECKS: 99 run, 0 failed
 STD_ASSET_RESULT: PASS
 GATE_PASS: standard asset publishing
 
@@ -551,15 +574,15 @@ L1_STD_CHECK_PASS: LOD1 real decimation meets task budget ({ "level": 1, "faces_
 L1_STD_CHECK_PASS: LOD2 real decimation meets task budget ({ "level": 2, "faces_in": 12, "faces_out": 12, "target": 100, "method": "passthrough_below_budget", "passed": true, "verdict": "passthrough_below_budget 12→12 面" })
 L1_STD_CHECK_PASS: whitebox/collision/LOD rendered in status list
 L1_STD_CHECK_PASS: publish succeeds after hard checks pass
-L1_STD_CHECK_PASS: standard asset .asset.json written to publish directory (user://pcg_l1_standardization_test/published/std_door_8b08356984a6.asset.json)
-L1_STD_CHECK_PASS: publish returns stable asset id (std_door_8b08356984a6)
-L1_STD_CHECK_PASS: mesh file written for slot lod0 (user://pcg_l1_standardization_test/published/std_door_8b08356984a6.lod0.mesh.res)
+L1_STD_CHECK_PASS: standard asset .asset.json written to publish directory (user://pcg_l1_standardization_test/published/std_door_ad8e59128694.asset.json)
+L1_STD_CHECK_PASS: publish returns stable asset id (std_door_ad8e59128694)
+L1_STD_CHECK_PASS: mesh file written for slot lod0 (user://pcg_l1_standardization_test/published/std_door_ad8e59128694.lod0.mesh.res)
 L1_STD_CHECK_PASS: mesh file reloads as usable ArrayMesh (lod0)
-L1_STD_CHECK_PASS: mesh file written for slot lod1 (user://pcg_l1_standardization_test/published/std_door_8b08356984a6.lod1.mesh.res)
+L1_STD_CHECK_PASS: mesh file written for slot lod1 (user://pcg_l1_standardization_test/published/std_door_ad8e59128694.lod1.mesh.res)
 L1_STD_CHECK_PASS: mesh file reloads as usable ArrayMesh (lod1)
-L1_STD_CHECK_PASS: mesh file written for slot lod2 (user://pcg_l1_standardization_test/published/std_door_8b08356984a6.lod2.mesh.res)
+L1_STD_CHECK_PASS: mesh file written for slot lod2 (user://pcg_l1_standardization_test/published/std_door_ad8e59128694.lod2.mesh.res)
 L1_STD_CHECK_PASS: mesh file reloads as usable ArrayMesh (lod2)
-L1_STD_CHECK_PASS: mesh file written for slot whitebox (user://pcg_l1_standardization_test/published/std_door_8b08356984a6.whitebox.mesh.res)
+L1_STD_CHECK_PASS: mesh file written for slot whitebox (user://pcg_l1_standardization_test/published/std_door_ad8e59128694.whitebox.mesh.res)
 L1_STD_CHECK_PASS: mesh file reloads as usable ArrayMesh (whitebox)
 L1_STD_CHECK_PASS: publish manifest records lod1/lod2 generation detail
 L1_STD_CHECK_PASS: published .asset.json is valid JSON
@@ -569,10 +592,17 @@ L1_STD_CHECK_PASS: payload embeds acceptance report verdict
 L1_STD_CHECK_PASS: payload records all four mesh file slots
 L1_STD_CHECK_PASS: reload_published verifies via load_asset
 L1_STD_CHECK_PASS: reload restores normalized/lod1/lod2/whitebox meshes
+L1_STD_CHECK_PASS: reloaded asset carries non-empty occupancy
+L1_STD_CHECK_PASS: occupancy has all five category AABBs
+L1_STD_CHECK_PASS: occupancy.solid equals normalized mesh AABB
+L1_STD_CHECK_PASS: occupancy.clearance expands solid by edited 净空余量 0.08
+L1_STD_CHECK_PASS: occupancy.visual expands solid by edited 视觉保护区扩展 0.2
+L1_STD_CHECK_PASS: occupancy.embed covers below-surface root portion (depth=0.125000)
+L1_STD_CHECK_PASS: occupancy.exclusion expands embed by 0.05
 L1_STD_CHECK_PASS: reloaded asset dimensions match calibrated mesh ((1.0, 2.0, 0.25))
 L1_STD_CHECK_PASS: reload detects tampered manifest (dimensions (9.9, 9.9, 9.9) 与网格 AABB 不一致)
 L1_STD_CHECK_PASS: publish refused without selected L0 task
-L1_STD_CHECKS: 77 run, 0 failed
+L1_STD_CHECKS: 84 run, 0 failed
 L1_STD_RESULT: PASS
 ERROR: Pages in use exist at exit in PagedAllocator: N20RasterizerSceneDummy21GeometryInstanceDummyE
    at: ~PagedAllocator (./core/templates/paged_allocator.h:169)

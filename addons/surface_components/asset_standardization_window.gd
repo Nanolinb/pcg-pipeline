@@ -37,6 +37,8 @@ const EPS := 0.0001
 ## docs/component_authoring.md：Godot 顺时针正面绕序、朝外约定 → 封闭网格有向体积为负。
 const VOLUME_TOLERANCE := 0.01
 const CHECKED_BY := "L1 资产标准化与验收窗口"
+## 与 PCGStandardAsset.OCCUPANCY_MARGIN 一致：禁入区 = 嵌入区外扩该余量。
+const EXCLUSION_MARGIN := 0.05
 
 var tasks_directory := DEFAULT_TASKS_DIRECTORY
 var publish_directory := DEFAULT_PUBLISH_DIRECTORY
@@ -66,6 +68,7 @@ var lod_entries: Array = []
 var last_fit: Dictionary = {}
 var last_acceptance: Dictionary = {}
 var last_publish: Dictionary = {}
+var last_occupancy: Dictionary = {}
 var reloaded_asset: Resource
 
 var task_option: OptionButton
@@ -75,6 +78,8 @@ var load_button: Button
 var mesh_info_label: Label
 var target_size_box: HBoxContainer
 var root_embed_spin: SpinBox
+var clearance_spin: SpinBox
+var visual_margin_spin: SpinBox
 var outward_box: HBoxContainer
 var up_box: HBoxContainer
 var calibrate_button: Button
@@ -141,6 +146,7 @@ func set_source_mesh(mesh: Mesh, path: String = "") -> Dictionary:
 	lod_entries = []
 	last_fit = {}
 	reloaded_asset = null
+	last_occupancy = {}
 	if source_edit != null and not path.is_empty():
 		source_edit.text = path
 	_update_mesh_info()
@@ -292,6 +298,7 @@ func calibrate() -> Dictionary:
 	collision_entries = []
 	lod_entries = []
 	last_fit = {}
+	last_occupancy = {}
 	reloaded_asset = null
 	_update_mesh_info()
 	_update_calibration_label()
@@ -538,6 +545,13 @@ func reload_published() -> Dictionary:
 		and asset.lod2_mesh != null and asset.lod2_mesh.get_surface_count() > 0
 		and asset.whitebox_mesh != null and asset.whitebox_mesh.get_surface_count() > 0):
 		mismatches.append("重载资产缺少 lod1/lod2/whitebox 网格")
+	# 占用五类 AABB：优先读核心正式字段，回退验收报告内镜像。
+	last_occupancy = _extract_occupancy(asset)
+	if last_occupancy.is_empty():
+		mismatches.append("重载资产缺少 occupancy 五类 AABB")
+	else:
+		for problem in _verify_occupancy(last_occupancy, restored_mesh.get_aabb()):
+			mismatches.append(problem)
 	# 恢复窗口状态：网格、白盒、LOD 与报告都以重载资产为准重算。
 	reloaded_asset = asset
 	calibrated_mesh = restored_mesh
@@ -735,7 +749,97 @@ func _build_standard_asset() -> Resource:
 		"checked_at": Time.get_unix_time_from_system(),
 		"notes": notes,
 	}
+	# 五类占用 AABB（核心正式 occupancy 字段，{slot: {"min","max"}}；
+	# 只允许 solid/embed/exclusion/clearance/visual 五个槽位）。
+	var occupancy := _build_occupancy()
+	asset.set("occupancy", occupancy)
+	last_occupancy = occupancy
 	return asset
+
+
+## 五类占用 AABB（资产局部坐标，min/max 显式序列化，与
+## PCGStandardAsset.OCCUPANCY_SLOTS 语义一致）：
+## solid 实体占用（网格 AABB）；embed 根部嵌入板区（表面 inward 侧）；
+## exclusion 禁入区（embed 外扩 0.05，与核心推导一致）；
+## clearance 通行净空（solid 外扩用户编辑的净空余量）；
+## visual 视觉保护区（solid 外扩用户编辑的视觉扩展）。
+func _build_occupancy() -> Dictionary:
+	var mesh := active_mesh()
+	var aabb: AABB = _inspect(mesh)["stats"]["aabb"]
+	var embed := _embed_zone(aabb)
+	return {
+		"solid": _serialize_aabb(aabb),
+		"embed": _serialize_aabb(embed),
+		"exclusion": _serialize_aabb(embed.grow(EXCLUSION_MARGIN)),
+		"clearance": _serialize_aabb(aabb.grow(float(clearance_spin.value))),
+		"visual": _serialize_aabb(aabb.grow(float(visual_margin_spin.value))),
+	}
+
+
+func _embed_zone(aabb: AABB) -> AABB:
+	var depth := maxf(minf(-aabb.position.z, aabb.end.z), 0.0)
+	return AABB(aabb.position, Vector3(aabb.size.x, aabb.size.y, depth))
+
+
+func _serialize_aabb(aabb: AABB) -> Dictionary:
+	return {"min": [aabb.position.x, aabb.position.y, aabb.position.z],
+		"max": [aabb.end.x, aabb.end.y, aabb.end.z]}
+
+
+func _extract_occupancy(asset: Resource) -> Dictionary:
+	var from_prop: Variant = asset.get("occupancy")
+	if from_prop is Dictionary and not (from_prop as Dictionary).is_empty():
+		return from_prop
+	var from_report: Variant = asset.acceptance_report.get("occupancy", null)
+	if from_report is Dictionary:
+		return from_report
+	return {}
+
+
+func _dict_to_aabb(raw: Dictionary) -> AABB:
+	var min_v := _vec3_from_variant(raw.get("min", []))
+	var max_v := _vec3_from_variant(raw.get("max", []))
+	return AABB(min_v, max_v - min_v)
+
+
+func _vec3_from_variant(raw: Variant) -> Vector3:
+	if raw is Array and (raw as Array).size() == 3:
+		var items := raw as Array
+		return Vector3(float(items[0]), float(items[1]), float(items[2]))
+	return Vector3.ZERO
+
+
+func _verify_occupancy(occupancy: Dictionary, mesh_aabb: AABB) -> Array:
+	var problems := PackedStringArray()
+	for slot in ["solid", "embed", "exclusion", "clearance", "visual"]:
+		if not (occupancy.get(slot) is Dictionary):
+			problems.append("occupancy 缺少 %s AABB" % slot)
+	if not problems.is_empty():
+		return Array(problems)
+	var solid := _dict_to_aabb(occupancy["solid"])
+	if (solid.position - mesh_aabb.position).length() > 0.01 \
+		or (solid.size - mesh_aabb.size).length() > 0.01:
+		problems.append("occupancy.solid 与网格 AABB 不一致")
+	var expected_embed := _embed_zone(solid)
+	if (_dict_to_aabb(occupancy["embed"]).position - expected_embed.position).length() > 0.01 \
+		or (_dict_to_aabb(occupancy["embed"]).size - expected_embed.size).length() > 0.01:
+		problems.append("occupancy.embed 板区不正确")
+	var expected_exclusion := expected_embed.grow(EXCLUSION_MARGIN)
+	if (_dict_to_aabb(occupancy["exclusion"]).position - expected_exclusion.position).length() > 0.01 \
+		or (_dict_to_aabb(occupancy["exclusion"]).size - expected_exclusion.size).length() > 0.01:
+		problems.append("occupancy.exclusion 未按嵌入区外扩 %.2f m" % EXCLUSION_MARGIN)
+	# 净空/视觉保护区必须与表单编辑值一致（可见编辑→发布→重载全链核对）。
+	var expected_clearance := solid.grow(float(clearance_spin.value))
+	var clearance := _dict_to_aabb(occupancy["clearance"])
+	if (clearance.position - expected_clearance.position).length() > 0.01 \
+		or (clearance.size - expected_clearance.size).length() > 0.01:
+		problems.append("occupancy.clearance 未按净空余量 %.3f m 扩展" % float(clearance_spin.value))
+	var expected_visual := solid.grow(float(visual_margin_spin.value))
+	var visual := _dict_to_aabb(occupancy["visual"])
+	if (visual.position - expected_visual.position).length() > 0.01 \
+		or (visual.size - expected_visual.size).length() > 0.01:
+		problems.append("occupancy.visual 未按视觉扩展 %.3f m 扩展" % float(visual_margin_spin.value))
+	return Array(problems)
 
 
 func _apply_publish_manifest(manifest: Dictionary) -> void:
@@ -944,6 +1048,11 @@ func _update_status_list() -> void:
 	else:
 		for entry in lod_entries:
 			status_list.add_item("LOD%d：%s" % [entry["level"], entry.get("verdict", "")])
+	if last_occupancy.is_empty():
+		status_list.add_item("占用：未生成（五类 AABB）")
+	else:
+		status_list.add_item("占用：五类 AABB（净空 %.2f / 视觉 %.2f m）"
+			% [float(clearance_spin.value), float(visual_margin_spin.value)])
 
 
 func _refresh_report_view() -> void:
@@ -983,6 +1092,7 @@ func _on_task_selected(index: int) -> void:
 	collision_entries = []
 	lod_entries = []
 	last_fit = {}
+	last_occupancy = {}
 	reloaded_asset = null
 	_update_mesh_info()
 	_update_calibration_label()
@@ -1067,6 +1177,8 @@ func _build_ui() -> void:
 	target_size_box = _vec3_row(calibrate_group, "目标尺寸 (m)", 0.01, 1000.0, 0.01)
 	_set_vec3_spins(target_size_box, Vector3(1.0, 2.0, 0.3))
 	root_embed_spin = _spin_row(calibrate_group, "根部嵌入比例", 0.0, 1.0, 0.01, 0.12)
+	clearance_spin = _spin_row(calibrate_group, "净空余量 (m)", 0.0, 10.0, 0.01, 0.05)
+	visual_margin_spin = _spin_row(calibrate_group, "视觉保护区扩展 (m)", 0.0, 10.0, 0.01, 0.15)
 	outward_box = _vec3_row(calibrate_group, "外法线轴", -1.0, 1.0, 0.05)
 	_set_vec3_spins(outward_box, Vector3(0.0, 0.0, 1.0))
 	up_box = _vec3_row(calibrate_group, "上方向轴", -1.0, 1.0, 0.05)

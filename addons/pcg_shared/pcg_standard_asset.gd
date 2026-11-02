@@ -5,8 +5,17 @@ extends Resource
 # v0.16 L1 标准资产：一份“交付了什么资产”的可见、可校验、可溯源发布物。
 # 任务是请求（PCGAssetTask），标准资产是验收后的交付：稳定 ID、任务引用、
 # 规范化网格（LOD0）、真实 LOD1/2、白盒、尺寸/根部约定、UV/碰撞策略、
-# 材质 Profile 引用与验收报告。由 PCGStandardAssetStore 原子发布到
-# assets/published（JSON 信封 + 每级网格 .res）；网格本体不内嵌 JSON。
+# 材质 Profile 引用、验收报告与五类占用区域（occupancy）。
+# 由 PCGStandardAssetStore 原子发布到 assets/published（JSON 信封 + 每级网格
+# .res）；网格本体不内嵌 JSON。
+#
+# occupancy 语义（资产局部坐标 AABB，min/max 显式序列化）：
+# - solid：资产实体占用（网格 AABB）。
+# - embed：根部嵌入宿主的部分（根部平面 inward 侧厚 root_embed 的板区）。
+# - exclusion：宿主上不得再装其他组件的区域（embed 外扩 OCCUPANCY_MARGIN）。
+# - clearance：资产周围必须留空的区域（solid 外扩 OCCUPANCY_MARGIN）。
+# - visual：视觉呈现范围（solid 外扩 VISUAL_MARGIN）。
+# 发布时若为空则由网格与 root_embed 推导；加载时逐区校验，缺失/非法一律拒绝。
 #
 # LOD 纪律：lod1_mesh/lod2_mesh 允许显式提供（lod_status="explicit"）；
 # 否则由 PCGMeshLod 真实减面（lod_status="auto"）。任何情况下都不得
@@ -18,6 +27,10 @@ const FORMAT_VERSION := 1
 const LOD_STATUSES: Array[StringName] = [&"auto", &"explicit"]
 const ACCEPTANCE_VERDICTS: Array[StringName] = [&"accepted", &"accepted_with_notes", &"rejected"]
 const REPORT_FIELDS: Array[String] = ["verdict", "checked_by", "checked_at", "notes"]
+## 五类占用区域的固定槽位；序列化为 {slot: {"min": [x,y,z], "max": [x,y,z]}}。
+const OCCUPANCY_SLOTS: Array[String] = ["solid", "embed", "exclusion", "clearance", "visual"]
+const OCCUPANCY_MARGIN := 0.05
+const VISUAL_MARGIN := 0.01
 
 @export var format_version: int = FORMAT_VERSION
 ## 身份：发布后不变（规则同 docs/core_contracts.md §1.1）。
@@ -60,6 +73,9 @@ const REPORT_FIELDS: Array[String] = ["verdict", "checked_by", "checked_at", "no
 @export var lod2_target_faces: int = 0
 ## 发布时生成的白盒（AABB 盒网格），随资产持久化。
 @export var whitebox_mesh: ArrayMesh
+## 五类占用区域（solid/embed/exclusion/clearance/visual），AABB 字典；
+## 发布时为空则由网格与 root_embed 推导，加载时逐区校验。
+@export var occupancy: Dictionary = {}
 ## 持久化的网格文件名（Store 发布/重载时维护）：lod0/lod1/lod2/whitebox。
 @export var mesh_files: Dictionary = {}
 
@@ -82,6 +98,81 @@ func mesh_aabb() -> AABB:
 	if normalized_mesh == null:
 		return AABB()
 	return normalized_mesh.get_aabb()
+
+
+## 取某一占用区域的 AABB；槽位缺失/非法返回空 AABB。
+func occupancy_zone(slot: String) -> AABB:
+	var parsed: Variant = parse_aabb(occupancy.get(slot, null))
+	return parsed if parsed is AABB else AABB()
+
+
+## 由规范化网格 AABB 与 root_embed 推导五类占用区域（资产局部坐标）。
+## 无网格时返回空字典（调用方应以校验错误处理）。
+func derive_occupancy() -> Dictionary:
+	var solid := mesh_aabb()
+	if normalized_mesh == null or solid.size == Vector3.ZERO:
+		return {}
+	var embed := _derive_embed_zone(solid)
+	return {
+		"solid": serialize_aabb(solid),
+		"embed": serialize_aabb(embed),
+		"exclusion": serialize_aabb(embed.grow(OCCUPANCY_MARGIN)),
+		"clearance": serialize_aabb(solid.grow(OCCUPANCY_MARGIN)),
+		"visual": serialize_aabb(solid.grow(VISUAL_MARGIN)),
+	}
+
+
+## 嵌入区：根部平面（过 root_offset、法向 outward_axis）inward 侧
+## 厚 root_embed 的板区与实体 AABB 的交；不相交或 depth<=0 时返回
+## root_offset 处的零尺寸 AABB（合法占位，不做负尺寸）。
+func _derive_embed_zone(aabb: AABB) -> AABB:
+	if root_embed <= 0.0:
+		return AABB(root_offset, Vector3.ZERO)
+	var axis := 0
+	var best := absf(outward_axis.x)
+	if absf(outward_axis.y) > best:
+		axis = 1
+		best = absf(outward_axis.y)
+	if absf(outward_axis.z) > best:
+		axis = 2
+	var sign := 1.0 if outward_axis[axis] > 0.0 else -1.0
+	var lo := aabb.position
+	var hi := aabb.end
+	var c0: float = root_offset[axis]
+	if sign > 0.0:
+		lo[axis] = maxf(lo[axis], c0 - root_embed)
+		hi[axis] = minf(hi[axis], c0)
+	else:
+		lo[axis] = maxf(lo[axis], c0)
+		hi[axis] = minf(hi[axis], c0 + root_embed)
+	if lo[axis] > hi[axis]:
+		return AABB(root_offset, Vector3.ZERO)
+	return AABB(lo, hi - lo)
+
+
+static func serialize_aabb(box: AABB) -> Dictionary:
+	return {
+		"min": [box.position.x, box.position.y, box.position.z],
+		"max": [box.end.x, box.end.y, box.end.z],
+	}
+
+
+## 解析 {"min": [x,y,z], "max": [x,y,z]}；合法返回 AABB（允许零尺寸），
+## 非法或 min > max 返回 null。
+static func parse_aabb(raw: Variant) -> Variant:
+	if not (raw is Dictionary):
+		return null
+	var data := raw as Dictionary
+	if not data.has("min") or not data.has("max"):
+		return null
+	var lo: Variant = PCGAssetTask._parse_vec3(data["min"])
+	var hi: Variant = PCGAssetTask._parse_vec3(data["max"])
+	if lo == null or hi == null:
+		return null
+	var size: Vector3 = (hi as Vector3) - (lo as Vector3)
+	if size.x < 0.0 or size.y < 0.0 or size.z < 0.0:
+		return null
+	return AABB(lo, size)
 
 
 func validation_errors() -> Array[String]:
@@ -139,6 +230,7 @@ func validation_errors() -> Array[String]:
 	if lod1_target_faces < 0 or lod2_target_faces < 0:
 		problems.append("lod target faces must be >= 0 (0 = derived)")
 	_append_report_errors(problems)
+	_append_occupancy_errors(problems)
 	if material_profile != null and material_profile_path.is_empty():
 		problems.append("material_profile is set but material_profile_path is empty; \
 save the profile to a resource path before publishing")
@@ -151,6 +243,24 @@ static func _enum_or_empty(data: Dictionary, field: String, fallback: String) ->
 	# 显式 null（热重载中间态）按非法空值处理，绝不当默认值放过。
 	var raw: Variant = data.get(field, fallback)
 	return StringName(String(raw)) if raw != null else StringName("")
+
+
+func _append_occupancy_errors(problems: Array[String]) -> void:
+	if occupancy.is_empty():
+		problems.append("occupancy is missing; publish derives it from mesh/root_embed")
+		return
+	for key in occupancy:
+		if not OCCUPANCY_SLOTS.has(String(key)):
+			problems.append("occupancy has unknown zone \"%s\" (allowed: %s)"
+				% [String(key), ", ".join(OCCUPANCY_SLOTS)])
+	for slot in OCCUPANCY_SLOTS:
+		if not occupancy.has(slot):
+			problems.append("occupancy missing zone \"%s\"" % slot)
+			continue
+		var parsed: Variant = parse_aabb(occupancy[slot])
+		if parsed == null:
+			problems.append("occupancy zone \"%s\" must be {\"min\": [x,y,z], \"max\": [x,y,z]} with min <= max"
+				% slot)
 
 
 func _append_report_errors(problems: Array[String]) -> void:
@@ -197,6 +307,7 @@ func to_dict() -> Dictionary:
 		"lod_status": Array(lod_status),
 		"lod1_target_faces": lod1_target_faces,
 		"lod2_target_faces": lod2_target_faces,
+		"occupancy": occupancy.duplicate(),
 		"mesh_files": mesh_files.duplicate(),
 	}
 
@@ -244,6 +355,26 @@ func from_dict(data: Dictionary) -> Array[String]:
 		for slot in ["lod0", "lod1", "lod2", "whitebox"]:
 			if String((mesh_files_raw as Dictionary).get(slot, "")).is_empty():
 				problems.append("mesh_files missing entry \"%s\"" % slot)
+	var occupancy_raw: Variant = data.get("occupancy", null)
+	var occupancy_parsed := {}
+	if occupancy_raw == null:
+		problems.append("missing field: occupancy")
+	elif not (occupancy_raw is Dictionary):
+		problems.append("invalid field: occupancy must be an object")
+	else:
+		var occ := occupancy_raw as Dictionary
+		for key in occ:
+			if not OCCUPANCY_SLOTS.has(String(key)):
+				problems.append("invalid field: occupancy unknown zone \"%s\"" % String(key))
+		for slot in OCCUPANCY_SLOTS:
+			if not occ.has(slot):
+				problems.append("invalid field: occupancy missing zone \"%s\"" % slot)
+				continue
+			var zone: Variant = parse_aabb(occ[slot])
+			if zone == null:
+				problems.append("invalid field: occupancy zone \"%s\" must be min/max with min <= max" % slot)
+			else:
+				occupancy_parsed[slot] = serialize_aabb(zone)
 	var id_raw: Variant = data.get("stable_id", null)
 	if id_raw == null or not (id_raw is Dictionary):
 		problems.append("missing field: stable_id")
@@ -276,5 +407,6 @@ func from_dict(data: Dictionary) -> Array[String]:
 		lod_status = raw_lod_status
 		lod1_target_faces = int(data.get("lod1_target_faces", 0))
 		lod2_target_faces = int(data.get("lod2_target_faces", 0))
+		occupancy = occupancy_parsed
 		mesh_files = (mesh_files_raw as Dictionary).duplicate()
 	return problems

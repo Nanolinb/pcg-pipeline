@@ -11,7 +11,17 @@ extends RefCounted
 #   用白盒（AABB 盒网格，发布时随资产持久化）。
 # - 碰撞：按资产 collision_policy 输出真实碰撞体（box=包围盒、convex=网格
 #   顶点凸包、concave=逐三角形面片、none=不挂碰撞），挂在 StaticBody3D 子节点。
+# - 碰撞层语义（位掩码常量）：试装产出的结构体固定在 HOST 层、只掩 PLAYER；
+#   EMBEDDED/EXCLUSION/PROXY 供占用区域代理体使用，PICKABLE 供拾取代理使用。
 # 纯静态工厂：不依赖场景树，headless 可完整验证。
+
+## 默认碰撞层/掩码（位值）。输出结构体：layer=HOST，mask=PLAYER。
+const COLLISION_LAYER_HOST := 1
+const COLLISION_LAYER_PICKABLE := 2
+const COLLISION_LAYER_PLAYER := 4
+const COLLISION_LAYER_EMBEDDED := 8
+const COLLISION_LAYER_EXCLUSION := 16
+const COLLISION_LAYER_PROXY := 32
 
 ## options 键：lod(int 0..2)、whitebox(bool)、collision(bool，默认 true)。
 static func build_surface_preview(asset: PCGStandardAsset, host: PCGSurfaceHost,
@@ -45,12 +55,15 @@ static func build_surface_preview(asset: PCGStandardAsset, host: PCGSurfaceHost,
 
 
 ## 按碰撞策略构建 StaticBody3D（含 CollisionShape3D）；none 返回 null。
+## 层语义：结构体固定在 HOST 层、只与 PLAYER 碰撞。
 static func build_collision_body(asset: PCGStandardAsset) -> StaticBody3D:
 	var shape := build_collision_shape(asset)
 	if shape == null:
 		return null
 	var body := StaticBody3D.new()
 	body.name = "collision"
+	body.collision_layer = COLLISION_LAYER_HOST
+	body.collision_mask = COLLISION_LAYER_PLAYER
 	var collision_shape := CollisionShape3D.new()
 	collision_shape.shape = shape
 	var aabb := asset.mesh_aabb()

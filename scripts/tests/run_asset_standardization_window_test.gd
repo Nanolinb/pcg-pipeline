@@ -156,6 +156,18 @@ func _blocking_ids() -> Array:
 	return _window._blocking_ids(_window.last_acceptance)
 
 
+func _dict_to_aabb(raw: Dictionary) -> AABB:
+	var min_v: Array = raw.get("min", [])
+	var max_v: Array = raw.get("max", [])
+	return AABB(Vector3(float(min_v[0]), float(min_v[1]), float(min_v[2])),
+		Vector3(float(max_v[0]) - float(min_v[0]), float(max_v[1]) - float(min_v[1]),
+			float(max_v[2]) - float(min_v[2])))
+
+
+func _expanded(aabb: AABB, margin: float) -> AABB:
+	return AABB(aabb.position - Vector3.ONE * margin, aabb.size + Vector3.ONE * (margin * 2.0))
+
+
 func _make_test_task() -> Resource:
 	var task: Resource = _window.task_script.new()
 	task.task_id = &"task_l1_std_door"
@@ -392,6 +404,8 @@ func _check_publish_and_reload() -> void:
 	_window.generate_whitebox()
 	_window.generate_collision()
 	_window.generate_lod_status()
+	_window.clearance_spin.set_value_no_signal(0.08)
+	_window.visual_margin_spin.set_value_no_signal(0.2)
 	_window.publish_dir_edit.text = PUBLISH_DIR
 	var published: Dictionary = _window.publish()
 	_record(published.get("ok", false), "publish succeeds after hard checks pass",
@@ -434,6 +448,41 @@ func _check_publish_and_reload() -> void:
 	_record(asset != null and asset.normalized_mesh != null
 		and asset.lod1_mesh != null and asset.lod2_mesh != null and asset.whitebox_mesh != null,
 		"reload restores normalized/lod1/lod2/whitebox meshes")
+	# occupancy 五类 AABB：保存重载后非空，净空/视觉扩展正确。
+	var occupancy: Dictionary = {}
+	var occ_prop: Variant = asset.get("occupancy") if asset != null else null
+	if occ_prop is Dictionary and not (occ_prop as Dictionary).is_empty():
+		occupancy = occ_prop
+	elif asset != null and asset.acceptance_report.get("occupancy") is Dictionary:
+		occupancy = asset.acceptance_report["occupancy"]
+	_record(not occupancy.is_empty(), "reloaded asset carries non-empty occupancy")
+	var occ_slots := PackedStringArray()
+	for slot in ["solid", "embed", "exclusion", "clearance", "visual"]:
+		if not (occupancy.get(slot) is Dictionary):
+			occ_slots.append(slot)
+	_record(occ_slots.is_empty(), "occupancy has all five category AABBs", ", ".join(occ_slots))
+	if occupancy.has("solid"):
+		var solid := _dict_to_aabb(occupancy["solid"])
+		var mesh_aabb: AABB = asset.normalized_mesh.get_aabb()
+		_record((solid.position - mesh_aabb.position).length() < 0.01
+			and (solid.size - mesh_aabb.size).length() < 0.01,
+			"occupancy.solid equals normalized mesh AABB")
+		var expected_clearance := _expanded(solid, 0.08)
+		_record((_dict_to_aabb(occupancy["clearance"]).position - expected_clearance.position).length() < 0.01
+			and (_dict_to_aabb(occupancy["clearance"]).size - expected_clearance.size).length() < 0.01,
+			"occupancy.clearance expands solid by edited 净空余量 0.08")
+		var expected_visual := _expanded(solid, 0.2)
+		_record((_dict_to_aabb(occupancy["visual"]).position - expected_visual.position).length() < 0.01
+			and (_dict_to_aabb(occupancy["visual"]).size - expected_visual.size).length() < 0.01,
+			"occupancy.visual expands solid by edited 视觉保护区扩展 0.2")
+		var embed := _dict_to_aabb(occupancy["embed"])
+		var expected_embed_depth := minf(-solid.position.z, solid.end.z)
+		_record(absf(embed.size.z - expected_embed_depth) < 0.01 and embed.size.z > 0.0,
+			"occupancy.embed covers below-surface root portion", "depth=%f" % embed.size.z)
+		var expected_exclusion := _expanded(embed, 0.05)
+		_record((_dict_to_aabb(occupancy["exclusion"]).position - expected_exclusion.position).length() < 0.01
+			and (_dict_to_aabb(occupancy["exclusion"]).size - expected_exclusion.size).length() < 0.01,
+			"occupancy.exclusion expands embed by 0.05")
 	if asset != null:
 		_record((asset.resolved_dimensions() - Vector3(1.0, 2.0, 0.25)).length() < 0.01,
 			"reloaded asset dimensions match calibrated mesh", str(asset.resolved_dimensions()))
