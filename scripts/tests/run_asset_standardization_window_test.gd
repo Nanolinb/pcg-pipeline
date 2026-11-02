@@ -54,6 +54,7 @@ func _main() -> void:
 	await _check_scroll_layout_at_small_size()
 	await _check_problem_meshes_blocked()
 	await _check_load_from_path()
+	await _check_valid_crate_full_flow()
 	await _check_calibration()
 	await _check_trial_fit_hosts()
 	await _check_fit_negative_cases()
@@ -218,6 +219,40 @@ func _make_test_task() -> Resource:
 	return task
 
 
+func _make_crate_task() -> Resource:
+	var task: Resource = _window.task_script.new()
+	task.task_id = &"task_l1_std_crate"
+	task.display_name = "标准化板条箱"
+	task.category = &"decoration"
+	task.purpose = "L1 正式 fixtures 完整流程用箱型资产"
+	task.producer = &"human"
+	task.size_min = Vector3(0.2, 0.2, 0.1)
+	task.size_max = Vector3(2.0, 3.0, 1.0)
+	task.target_size = Vector3(0.6, 0.6, 0.6)
+	task.tri_budget = 500
+	task.lod1_budget = 250
+	task.lod2_budget = 100
+	task.texture_size = 512
+	task.material_budget = 3
+	task.uv_policy = &"world_scale"
+	task.collision_policy = &"convex"
+	task.origin_convention = "root_center"
+	task.outward_axis = Vector3(0.0, 0.0, 1.0)
+	task.up_axis = Vector3(0.0, 1.0, 0.0)
+	task.root_embed = 0.12
+	task.interface_requirements = "无接口，占位测试"
+	task.variant_count = 1
+	task.status = &"draft"
+	return task
+
+
+func _task_index(task_id: String) -> int:
+	for index in _window.tasks.size():
+		if String(_window.tasks[index].task_id) == task_id:
+			return index
+	return -1
+
+
 # ---------------------------------------------------------------------------
 # 检查项
 
@@ -372,6 +407,89 @@ func owner_set(node: Node, owner: Node) -> void:
 	node.owner = owner
 	for child in node.get_children():
 		owner_set(child, owner)
+
+
+## 正式 assets/raw/valid_crate.tres 原始资源的完整流程：
+## 真实加载按钮 → 校准 → 三主体试装 → 白盒/碰撞/LOD → 发布与重载，
+## 明确断言有向体积为负（Godot 顺时针朝外约定）且无硬性失败。
+func _check_valid_crate_full_flow() -> void:
+	if _window == null or not _window.resolved:
+		_record(false, "valid crate flow skipped (window missing shared API)")
+		return
+	var crate_path := "res://assets/raw/valid_crate.tres"
+	_record(FileAccess.file_exists(crate_path),
+		"exported fixture exists (run export_mesh_fixtures.gd)", crate_path)
+	_record(ResourceLoader.exists(crate_path), "valid_crate.tres is loadable", crate_path)
+	var saved: Dictionary = _window.store.save_task(_make_crate_task(), TASK_DIR)
+	_record(saved.get("ok", false), "crate task saved", ", ".join(saved.get("errors", [])))
+	_window.refresh_task_list()
+	var crate_index := _task_index("task_l1_std_crate")
+	_record(crate_index >= 0, "crate task listed after refresh")
+	if crate_index < 0:
+		return
+	_window.select_task(crate_index)
+	_record((_window.get_target_size() - Vector3(0.6, 0.6, 0.6)).length() < 0.001,
+		"crate task applies target size to form")
+	# 真实“加载资源”按钮驱动加载正式原始资源。
+	_window.source_edit.text = crate_path
+	_window.load_button.pressed.emit()
+	_record(_window.source_mesh != null and _window.status_label.text.begins_with("Mesh 已载入"),
+		"valid_crate loads via 加载资源 button", _window.status_label.text)
+	# 顺时针朝外约定：单位箱体所有面一致时有向体积必须为 -1。
+	var source_volume: float = _window._signed_volume(_window.source_mesh)
+	_record(is_equal_approx(source_volume, -1.0),
+		"valid_crate signed volume is consistently CW outward", "volume=%f" % source_volume)
+	# 校准。
+	var calibration: Dictionary = _window.calibrate()
+	_record(calibration.get("ok", false), "crate calibrates", String(calibration.get("error", "")))
+	var aabb: AABB = _window.active_analysis()["stats"]["aabb"]
+	_record((aabb.size - Vector3(0.6, 0.6, 0.6)).length() < 0.01,
+		"crate calibrated size matches target", str(aabb.size))
+	_record(is_equal_approx(_window._signed_volume(_window.calibrated_mesh), -0.216),
+		"crate calibrated volume stays consistently CW outward", "volume=%f" % _window._signed_volume(_window.calibrated_mesh))
+	# 无硬性失败：验收报告里所有 blocking 条目必须通过。
+	var ids := _blocking_ids()
+	_record(ids.is_empty(), "crate acceptance has no blocking failures", ", ".join(ids))
+	# 三主体试装（失败时报告具体字段）。
+	var names := ["plane", "cylinder", "dome_cylinder"]
+	for kind in 3:
+		var fit: Dictionary = _window.trial_fit(kind)
+		_record(fit.get("ok", false), "crate %s 试装 passes" % names[kind],
+			"floating=%s pierces_back=%s reversed=%s embed=%.3f thickness=%.3f protrusion=%.3f"
+			% [fit.get("floating", "?"), fit.get("pierces_back", "?"), fit.get("reversed", "?"),
+				float(fit.get("embed_depth", 0.0)), float(fit.get("thickness", 0.0)),
+				float(fit.get("protrusion", 0.0))])
+	# 白盒 / 碰撞 / LOD。
+	var whitebox: Dictionary = _window.generate_whitebox()
+	_record(whitebox.get("ok", false), "crate whitebox generated")
+	var collision: Dictionary = _window.generate_collision()
+	_record(collision.get("ok", false) and String(collision.get("policy", "")) == "convex"
+		and _window.collision_entries[0]["shape"] is ConvexPolygonShape3D
+		and (_window.collision_entries[0]["shape"] as ConvexPolygonShape3D).points.size() == 8,
+		"crate convex collision from 8 welded vertices")
+	var lod: Dictionary = _window.generate_lod_status()
+	_record(lod.get("ok", false) and _window.lod_entries.size() == 3
+		and bool(_window.lod_entries[0]["passed"]) and bool(_window.lod_entries[1]["passed"]),
+		"crate LOD status passes task budgets")
+	_record(_blocking_ids().is_empty(), "crate still clean before publish", ", ".join(_blocking_ids()))
+	await _capture("02c_valid_crate")
+	# 发布与重载（同一临时发布目录；稳定 ID 每次新生成，不会撞重复发布）。
+	_window.publish_dir_edit.text = PUBLISH_DIR
+	var published: Dictionary = _window.publish()
+	_record(published.get("ok", false), "crate publishes", String(published.get("error", "")))
+	var reloaded: Dictionary = _window.reload_published()
+	_record(reloaded.get("ok", false), "crate reload verifies",
+		"; ".join(reloaded.get("mismatches", [])))
+	var asset: Resource = reloaded.get("asset", null)
+	_record(asset != null and asset.normalized_mesh != null
+		and (asset.resolved_dimensions() - Vector3(0.6, 0.6, 0.6)).length() < 0.01,
+		"crate reload restores normalized mesh and dimensions")
+	_record(not (_window._extract_occupancy(asset) if asset != null else {}).is_empty(),
+		"crate reload carries occupancy")
+	# 恢复门任务与既有流程的前置状态。
+	var door_index := _task_index("task_l1_std_door")
+	if door_index >= 0:
+		_window.select_task(door_index)
 
 
 func _check_calibration() -> void:

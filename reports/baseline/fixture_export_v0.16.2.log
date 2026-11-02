@@ -1,0 +1,10 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+MESH_FIXTURE_EXPORT_BEGIN
+MESH_FIXTURE_EXPORTED: res://assets/raw/valid_crate.tres
+MESH_FIXTURE_EXPORTED: res://assets/raw/open_crate.tres
+MESH_FIXTURE_EXPORTED: res://assets/raw/degenerate_crate.tres
+MESH_FIXTURE_EXPORTED: res://assets/raw/uv_missing_crate.tres
+MESH_FIXTURE_EXPORTED: res://assets/raw/non_manifold_fan.tres
+MESH_FIXTURE_EXPORTED: res://assets/raw/beam_block.tres
+MESH_FIXTURE_EXPORT_RESULT: PASS

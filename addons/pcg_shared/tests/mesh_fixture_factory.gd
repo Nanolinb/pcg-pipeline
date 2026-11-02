@@ -72,8 +72,8 @@ static func _build_cube(resource_name: String, size: Vector3, skip_top: bool,
 	if not skip_top:
 		faces.append([Vector3(-h.x, h.y, -h.z), Vector3(-h.x, h.y, h.z), Vector3(h.x, h.y, h.z), Vector3(h.x, h.y, -h.z), Vector3.UP])
 	faces.append_array([
-		[Vector3(-h.x, -h.y, h.z), Vector3(-h.x, h.y, h.z), Vector3(h.x, h.y, h.z), Vector3(h.x, -h.y, h.z), Vector3.FORWARD],
-		[Vector3(h.x, -h.y, -h.z), Vector3(h.x, h.y, -h.z), Vector3(-h.x, h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3.BACK],
+		[Vector3(-h.x, -h.y, h.z), Vector3(-h.x, h.y, h.z), Vector3(h.x, h.y, h.z), Vector3(h.x, -h.y, h.z), Vector3.BACK],
+		[Vector3(h.x, -h.y, -h.z), Vector3(h.x, h.y, -h.z), Vector3(-h.x, h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3.FORWARD],
 	])
 	for face in faces:
 		_add_quad(verts, normals, uvs, indices,
@@ -94,8 +94,8 @@ static func _build_degenerate_crate() -> ArrayMesh:
 		[Vector3(-h.x, -h.y, h.z), Vector3(-h.x, -h.y, -h.z), Vector3(-h.x, h.y, -h.z), Vector3(-h.x, h.y, h.z), Vector3.LEFT],
 		[Vector3(-h.x, -h.y, h.z), Vector3(h.x, -h.y, h.z), Vector3(h.x, -h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3.DOWN],
 		[Vector3(-h.x, h.y, -h.z), Vector3(-h.x, h.y, h.z), Vector3(h.x, h.y, h.z), Vector3(h.x, h.y, -h.z), Vector3.UP],
-		[Vector3(-h.x, -h.y, h.z), Vector3(-h.x, h.y, h.z), Vector3(h.x, h.y, h.z), Vector3(h.x, -h.y, h.z), Vector3.FORWARD],
-		[Vector3(h.x, -h.y, -h.z), Vector3(h.x, h.y, -h.z), Vector3(-h.x, h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3.BACK],
+		[Vector3(-h.x, -h.y, h.z), Vector3(-h.x, h.y, h.z), Vector3(h.x, h.y, h.z), Vector3(h.x, -h.y, h.z), Vector3.BACK],
+		[Vector3(h.x, -h.y, -h.z), Vector3(h.x, h.y, -h.z), Vector3(-h.x, h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3.FORWARD],
 	]
 	for face in faces:
 		_add_quad(verts, normals, uvs, indices,
@@ -126,7 +126,7 @@ static func _add_quad(verts: PackedVector3Array, normals: PackedVector3Array,
 		p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3,
 		normal: Vector3, with_uv: bool, with_normals: bool) -> void:
 	var winding: Array[Vector3] = [p0, p1, p2, p3]
-	if (p1 - p0).cross(p2 - p0).dot(normal) < 0.0:
+	if (p1 - p0).cross(p2 - p0).dot(normal) > 0.0:
 		winding = [p0, p3, p2, p1]
 	var base := verts.size()
 	var quad_uvs: Array[Vector2] = [Vector2(0, 1), Vector2(1, 1), Vector2(1, 0), Vector2(0, 0)]
@@ -143,7 +143,7 @@ static func _add_tri(verts: PackedVector3Array, normals: PackedVector3Array,
 		uvs: PackedVector2Array, indices: PackedInt32Array,
 		p0: Vector3, p1: Vector3, p2: Vector3, hint: Vector3) -> void:
 	var winding: Array[Vector3] = [p0, p1, p2]
-	if (p1 - p0).cross(p2 - p0).dot(hint) < 0.0:
+	if (p1 - p0).cross(p2 - p0).dot(hint) > 0.0:
 		winding = [p0, p2, p1]
 	var base := verts.size()
 	var normal := (winding[1] - winding[0]).cross(winding[2] - winding[0]).normalized()

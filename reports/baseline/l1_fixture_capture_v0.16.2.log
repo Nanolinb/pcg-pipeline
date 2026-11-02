@@ -1,0 +1,153 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+OpenGL API 4.1 Metal - 90.5 - Compatibility - Using Device: Apple - Apple M3 Pro
+
+L1_STD_CAPTURE_MODE: ON
+L1_STD_BEGIN: asset standardization window UI/integration checks
+L1_STD_CHECK_PASS: editor_plugin.gd compiles with standardization integration (res://addons/surface_components/editor_plugin.gd)
+L1_STD_CHECK_PASS: editor_plugin.gd exposes open_asset_standardization()
+L1_STD_CHECK_PASS: dock.gd adds 资产标准化 button (res://addons/surface_components/dock.gd)
+L1_STD_CHECK_PASS: shared PCGAssetTaskStore instance created
+L1_STD_CHECK_PASS: PCGAssetMeshInspector / PCGSurfaceHostData / PCGStandardAsset(Store) scripts resolved
+L1_STD_CHECK_PASS: window title is L1 title (L1 资产标准化与验收)
+L1_STD_CHECK_PASS: task/source/calibrate/fit/whitebox/collision/lod/report/publish/reload controls exist
+L1_STD_CHECK_PASS: fit host option lists plane/cylinder/dome
+L1_STD_CHECK_PASS: window popup visible after open_standardization
+L1_STD_CHECK_PASS: test task saved to temp directory
+L1_STD_CHECK_PASS: task selector lists saved L0 task
+L1_STD_CHECK_PASS: task selection loads L0 task
+L1_STD_CHECK_PASS: task selection applies target size to calibration form
+L1_STD_CHECK_PASS: task selection applies root_embed
+CAPTURE: /Users/shaunlin/Kimi Space/PCG管道/reports/release_verification/v0.16.0/01_window_open.png
+L1_STD_CHECK_PASS: root content lives in a full-window ScrollContainer
+L1_STD_CHECK_PASS: standalone load button is labeled 加载资源
+L1_STD_CHECK_PASS: task OptionButton clips long text
+L1_STD_CHECK_PASS: load button placed at root level beside source row
+L1_STD_CHECK_PASS: window shrinks to 620x640 ((620, 640))
+L1_STD_CHECK_PASS: load button visible at 620x640
+L1_STD_CHECK_PASS: load button inside visible area at 620x640 (button=[P: (0.0, 76.0), S: (612.0, 31.0)] visible=[P: (0.0, 0.0), S: (620.0, 640.0)])
+L1_STD_CHECK_PASS: ScrollContainer is scrollable at 620x640 (max=866.000000 page=640.000000)
+L1_STD_CHECK_PASS: ScrollContainer vertical scrolling works
+L1_STD_CHECK_PASS: open floating quad blocked (closed/uv0/root) (closed, size_under_min, size_under_min, uv0, root)
+L1_STD_CHECK_PASS: publish disabled for problem mesh
+L1_STD_CHECK_PASS: acceptance report rendered in list
+L1_STD_CHECK_PASS: degenerate non-manifold mesh blocked (zero_area/nonmanifold) (nonmanifold, closed, zero_area_triangle, size_under_min)
+L1_STD_CHECK_PASS: inverted closed box blocked (winding/volume sign) (winding)
+L1_STD_CHECK_PASS: inverted box still passes uv0 (uv present)
+CAPTURE: /Users/shaunlin/Kimi Space/PCG管道/reports/release_verification/v0.16.0/01b_problem_report.png
+L1_STD_CHECK_PASS: publish refused while hard checks fail
+L1_STD_CHECK_PASS: mesh resource saved for path loading (user://pcg_l1_standardization_test/candidate_box.tres)
+L1_STD_CHECK_PASS: Mesh resource loads via 加载资源 button (Mesh 已载入: user://pcg_l1_standardization_test/candidate_box.tres)
+L1_STD_CHECK_PASS: packed scene built for path loading
+L1_STD_CHECK_PASS: packed scene saved (user://pcg_l1_standardization_test/candidate_scene.tscn)
+L1_STD_CHECK_PASS: PackedScene mesh loads via 加载资源 button (PackedScene 网格已载入: user://pcg_l1_standardization_test/candidate_scene.tscn)
+L1_STD_CHECK_PASS: missing resource path reports failure via button (加载失败：资源不存在: res://does/not/exist.tres)
+L1_STD_CHECK_PASS: exported fixture exists (run export_mesh_fixtures.gd) (res://assets/raw/valid_crate.tres)
+L1_STD_CHECK_PASS: valid_crate.tres is loadable (res://assets/raw/valid_crate.tres)
+L1_STD_CHECK_PASS: crate task saved
+L1_STD_CHECK_PASS: crate task listed after refresh
+L1_STD_CHECK_PASS: crate task applies target size to form
+L1_STD_CHECK_PASS: valid_crate loads via 加载资源 button (Mesh 已载入: res://assets/raw/valid_crate.tres)
+L1_STD_CHECK_PASS: valid_crate signed volume is consistently CW outward (volume=-1.000000)
+L1_STD_CHECK_PASS: crate calibrates
+L1_STD_CHECK_PASS: crate calibrated size matches target ((0.6, 0.6, 0.6))
+L1_STD_CHECK_PASS: crate calibrated volume stays consistently CW outward (volume=-0.216000)
+L1_STD_CHECK_PASS: crate acceptance has no blocking failures
+L1_STD_CHECK_PASS: crate plane 试装 passes (floating=false pierces_back=false reversed=false embed=0.300 thickness=0.360 protrusion=0.300)
+L1_STD_CHECK_PASS: crate cylinder 试装 passes (floating=false pierces_back=false reversed=false embed=0.300 thickness=0.700 protrusion=0.300)
+L1_STD_CHECK_PASS: crate dome_cylinder 试装 passes (floating=false pierces_back=false reversed=false embed=0.300 thickness=0.700 protrusion=0.300)
+L1_STD_CHECK_PASS: crate whitebox generated
+L1_STD_CHECK_PASS: crate convex collision from 8 welded vertices
+L1_STD_CHECK_PASS: crate LOD status passes task budgets
+L1_STD_CHECK_PASS: crate still clean before publish
+CAPTURE: /Users/shaunlin/Kimi Space/PCG管道/reports/release_verification/v0.16.0/02c_valid_crate.png
+L1_STD_CHECK_PASS: crate publishes
+L1_STD_CHECK_PASS: crate reload verifies
+L1_STD_CHECK_PASS: crate reload restores normalized mesh and dimensions
+L1_STD_CHECK_PASS: crate reload carries occupancy
+L1_STD_CHECK_PASS: calibrate succeeds
+L1_STD_CHECK_PASS: calibrated mesh produced
+L1_STD_CHECK_PASS: calibration status label updated
+L1_STD_CHECK_PASS: calibrated size matches target ((1.0, 2.0, 0.25))
+L1_STD_CHECK_PASS: calibrated root embeds root_embed × height below origin (min_y=-0.240000)
+L1_STD_CHECK_PASS: target size survived round trip through form
+L1_STD_CHECK_PASS: calibrated good box passes all hard checks
+L1_STD_CHECK_PASS: publish enabled after calibration passes
+CAPTURE: /Users/shaunlin/Kimi Space/PCG管道/reports/release_verification/v0.16.0/02_loaded_calibrated.png
+L1_STD_CHECK_PASS: plane 试装 passes
+L1_STD_CHECK_PASS: plane 试装 embed within thickness
+L1_STD_CHECK_PASS: cylinder 试装 passes
+L1_STD_CHECK_PASS: cylinder 试装 embed within thickness
+L1_STD_CHECK_PASS: dome_cylinder 试装 passes
+L1_STD_CHECK_PASS: dome_cylinder 试装 embed within thickness
+L1_STD_CHECK_PASS: all three host fit results recorded
+L1_STD_CHECK_PASS: fit results rendered into acceptance report
+CAPTURE: /Users/shaunlin/Kimi Space/PCG管道/reports/release_verification/v0.16.0/03_trial_fit.png
+L1_STD_CHECK_PASS: zero-depth quad flagged on plane host (floating or reversed)
+L1_STD_CHECK_PASS: deep box flagged piercing plane host back side
+L1_STD_CHECK_PASS: whitebox generated from calibrated AABB
+L1_STD_CHECK_PASS: whitebox is a persisted ArrayMesh (PCGSurfacePreview)
+L1_STD_CHECK_PASS: whitebox size equals calibrated size ((1.0, 2.0, 0.25))
+L1_STD_CHECK_PASS: collision uses task collision_policy (convex)
+L1_STD_CHECK_PASS: convex collision hull built from 8 box vertices
+L1_STD_CHECK_PASS: LOD status generated for three levels (PCGMeshLod)
+L1_STD_CHECK_PASS: LOD0 budget comes from task and 12-face mesh passes
+L1_STD_CHECK_PASS: LOD1 real decimation meets task budget ({ "level": 1, "faces_in": 12, "faces_out": 12, "target": 250, "method": "passthrough_below_budget", "passed": true, "verdict": "passthrough_below_budget 12→12 面" })
+L1_STD_CHECK_PASS: LOD2 real decimation meets task budget ({ "level": 2, "faces_in": 12, "faces_out": 12, "target": 100, "method": "passthrough_below_budget", "passed": true, "verdict": "passthrough_below_budget 12→12 面" })
+L1_STD_CHECK_PASS: whitebox/collision/LOD rendered in status list
+L1_STD_CHECK_PASS: publish succeeds after hard checks pass
+L1_STD_CHECK_PASS: standard asset .asset.json written to publish directory (user://pcg_l1_standardization_test/published/std_door_b30e915d56e3.asset.json)
+L1_STD_CHECK_PASS: publish returns stable asset id (std_door_b30e915d56e3)
+L1_STD_CHECK_PASS: mesh file written for slot lod0 (user://pcg_l1_standardization_test/published/std_door_b30e915d56e3.lod0.mesh.res)
+L1_STD_CHECK_PASS: mesh file reloads as usable ArrayMesh (lod0)
+L1_STD_CHECK_PASS: mesh file written for slot lod1 (user://pcg_l1_standardization_test/published/std_door_b30e915d56e3.lod1.mesh.res)
+L1_STD_CHECK_PASS: mesh file reloads as usable ArrayMesh (lod1)
+L1_STD_CHECK_PASS: mesh file written for slot lod2 (user://pcg_l1_standardization_test/published/std_door_b30e915d56e3.lod2.mesh.res)
+L1_STD_CHECK_PASS: mesh file reloads as usable ArrayMesh (lod2)
+L1_STD_CHECK_PASS: mesh file written for slot whitebox (user://pcg_l1_standardization_test/published/std_door_b30e915d56e3.whitebox.mesh.res)
+L1_STD_CHECK_PASS: mesh file reloads as usable ArrayMesh (whitebox)
+L1_STD_CHECK_PASS: publish manifest records lod1/lod2 generation detail
+CAPTURE: /Users/shaunlin/Kimi Space/PCG管道/reports/release_verification/v0.16.0/04_published.png
+L1_STD_CHECK_PASS: published .asset.json is valid JSON
+L1_STD_CHECK_PASS: asset document carries format_version envelope with payload
+L1_STD_CHECK_PASS: payload records task reference and display name
+L1_STD_CHECK_PASS: payload embeds acceptance report verdict
+L1_STD_CHECK_PASS: payload records all four mesh file slots
+L1_STD_CHECK_PASS: reload_published verifies via load_asset
+L1_STD_CHECK_PASS: reload restores normalized/lod1/lod2/whitebox meshes
+L1_STD_CHECK_PASS: reloaded asset carries non-empty occupancy
+L1_STD_CHECK_PASS: occupancy has all five category AABBs
+L1_STD_CHECK_PASS: occupancy.solid equals normalized mesh AABB
+L1_STD_CHECK_PASS: occupancy.clearance expands solid by edited 净空余量 0.08
+L1_STD_CHECK_PASS: occupancy.visual expands solid by edited 视觉保护区扩展 0.2
+L1_STD_CHECK_PASS: occupancy.embed covers below-surface root portion (depth=0.125000)
+L1_STD_CHECK_PASS: occupancy.exclusion expands embed by 0.05
+CAPTURE: /Users/shaunlin/Kimi Space/PCG管道/reports/release_verification/v0.16.0/05_reloaded.png
+L1_STD_CHECK_PASS: reloaded asset dimensions match calibrated mesh ((1.0, 2.0, 0.25))
+L1_STD_CHECK_PASS: reload detects tampered manifest (dimensions (9.9, 9.9, 9.9) 与网格 AABB 不一致)
+L1_STD_CHECK_PASS: publish refused without selected L0 task
+L1_STD_CHECKS: 115 run, 0 failed
+L1_STD_RESULT: PASS
+ERROR: Pages in use exist at exit in PagedAllocator: N20RasterizerSceneGLES321GeometryInstanceGLES3E
+   at: ~PagedAllocator (./core/templates/paged_allocator.h:169)
+ERROR: 2 RID allocations of type 'N5GLES34MeshE' were leaked at exit.
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+WARNING: Leaked instance dependency: Bug - did not call instance_notify_deleted when freeing.
+     at: ~Dependency (servers/rendering/storage/utilities.cpp:56)
+ERROR: Buffer with GL ID of 94: leaked 96 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 95: leaked 64 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 99: leaked 72 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 104: leaked 96 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 105: leaked 64 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: Buffer with GL ID of 106: leaked 72 bytes.
+   at: ~Utilities (drivers/gles3/storage/utilities.cpp:108)
+ERROR: 2 RID allocations of type 'N17RendererSceneCull8InstanceE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+     at: cleanup (core/object/object.cpp:2641)
+ERROR: 1 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
