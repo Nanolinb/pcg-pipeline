@@ -4,6 +4,7 @@ extends RefCounted
 
 const Definition = preload("res://scripts/building/building_component_definition.gd")
 const MeshFactory = preload("res://scripts/building/building_mesh_factory.gd")
+const MeshBuildUtil = preload("res://addons/pcg_shared/mesh_build_util.gd")
 
 func build_plan(plan: PCGBuildingPlan, catalog: PCGBuildingComponentCatalog) -> Dictionary:
 	var errors := plan.validation_errors()
@@ -166,7 +167,7 @@ func build_building(footprint: PCGBuildingFootprint, master_seed: String,
 	else:
 		diagnostics["rejected"] += 1
 	root.set_meta("component_count", count)
-	root.set_meta("triangle_count", _triangle_count(body.mesh) + _component_triangles(components))
+	root.set_meta("triangle_count", MeshBuildUtil.triangle_count(body.mesh) + _component_triangles(components))
 	# 与 PCGBuildingPlan.facade_signature_for 保持一致：增量重建的脏检查才能识别避让区变化。
 	var connector_data: Array = []
 	for connector in connectors:
@@ -494,16 +495,9 @@ func _roof_anchor(polygon: PackedVector2Array) -> Vector2:
 		return polygon[0]
 	return (polygon[triangles[0]] + polygon[triangles[1]] + polygon[triangles[2]]) / 3.0
 
-func _triangle_count(mesh: Mesh) -> int:
-	var count := 0
-	for surface in mesh.get_surface_count():
-		var indices = mesh.surface_get_arrays(surface)[Mesh.ARRAY_INDEX]
-		count += int(indices.size() / 3) if indices != null else int(mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX].size() / 3)
-	return count
-
 func _component_triangles(parent: Node3D) -> int:
 	var count := 0
 	for child in parent.get_children():
 		if child is MeshInstance3D and child.mesh != null:
-			count += _triangle_count(child.mesh)
+			count += MeshBuildUtil.triangle_count(child.mesh)
 	return count

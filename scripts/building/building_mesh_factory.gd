@@ -2,6 +2,8 @@
 class_name PCGBuildingMeshFactory
 extends RefCounted
 
+const MeshBuildUtil = preload("res://addons/pcg_shared/mesh_build_util.gd")
+
 static func component(definition) -> ArrayMesh:
 	match definition.geometry:
 		definition.Geometry.FRAME:
@@ -9,13 +11,13 @@ static func component(definition) -> ArrayMesh:
 		definition.Geometry.DOOR:
 			return _frame(definition.size, definition.frame_width, true)
 		definition.Geometry.PARAPET:
-			return _boxes([
+			return MeshBuildUtil.boxes([
 				{"size": definition.size, "center": Vector3.ZERO},
 				{"size": Vector3(definition.size.x, definition.size.y * 0.16, definition.size.z * 1.35),
 					"center": Vector3(0.0, definition.size.y * 0.5, 0.0)},
 			])
 		definition.Geometry.AWNING:
-			return _boxes([
+			return MeshBuildUtil.boxes([
 				{"size": Vector3(definition.size.x, definition.size.y, definition.size.z),
 					"center": Vector3(0.0, 0.0, definition.size.z * 0.5),
 					"basis": Basis(Vector3.RIGHT, deg_to_rad(-12.0))},
@@ -27,7 +29,7 @@ static func component(definition) -> ArrayMesh:
 					"basis": Basis(Vector3.RIGHT, deg_to_rad(32.0))},
 			])
 		definition.Geometry.ROOF_HATCH:
-			return _boxes([
+			return MeshBuildUtil.boxes([
 				{"size": definition.size, "center": Vector3.ZERO},
 				{"size": Vector3(definition.size.x * 1.08, definition.size.y * 0.14, definition.size.z * 1.08),
 					"center": Vector3(0.0, definition.size.y * 0.54, 0.0)},
@@ -44,12 +46,12 @@ static func component(definition) -> ArrayMesh:
 			return _double_door(definition.size, definition.frame_width)
 		definition.Geometry.SKYBRIDGE:
 			var groups := skybridge_part_groups(definition)
-			var mesh := _boxes(groups["frame"] + groups["roof"])
-			var accent := _boxes(groups["accent"])
+			var mesh := MeshBuildUtil.boxes(groups["frame"] + groups["roof"])
+			var accent := MeshBuildUtil.boxes(groups["accent"])
 			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, accent.surface_get_arrays(0))
 			return mesh
 		_:
-			return _boxes([{"size": definition.size, "center": Vector3.ZERO}])
+			return MeshBuildUtil.boxes([{"size": definition.size, "center": Vector3.ZERO}])
 
 # 廊桥横截面单元：薄桥面、两侧边扶手横档与出挑顶棚；支撑顶棚的立柱与栏杆立柱沿桥长按间距独立生成（镂空侧面）。
 # 局部 X 为桥宽、Y 以桥面（楼层地面）为 0 向上、Z 为 1 米切片厚度；
@@ -155,13 +157,13 @@ static func extrude(polygon: PackedVector2Array, height: float, openings: Array 
 		var a := cap_polygon[triangles[index]]
 		var b := cap_polygon[triangles[index + 1]]
 		var c := cap_polygon[triangles[index + 2]]
-		_add_face(vertices, normals, uvs, indices, PackedVector3Array([
+		MeshBuildUtil.add_face(vertices, normals, uvs, indices, PackedVector3Array([
 			Vector3(a.x, height, a.y), Vector3(b.x, height, b.y), Vector3(c.x, height, c.y),
 		]), Vector3.UP, PackedVector2Array([a, b, c]))
-		_add_face(vertices, normals, uvs, indices, PackedVector3Array([
+		MeshBuildUtil.add_face(vertices, normals, uvs, indices, PackedVector3Array([
 			Vector3(c.x, 0.0, c.y), Vector3(b.x, 0.0, b.y), Vector3(a.x, 0.0, a.y),
 		]), Vector3.DOWN, PackedVector2Array([c, b, a]))
-	return _mesh(vertices, normals, uvs, indices)
+	return MeshBuildUtil.mesh(vertices, normals, uvs, indices)
 
 # 带门洞的立面：按全局高度带切水平条带（全宽，保证与相邻墙面/屋顶/地面的棱边完全对齐），
 # 洞口所在带内按 s 区间挖空，并为每个洞口生成五面内凹洞道（地面/顶/两侧/背板），保持封闭流形。
@@ -214,7 +216,7 @@ static func _emit_wall_quad(vertices: PackedVector3Array, normals: PackedVector3
 			uvs: PackedVector2Array, indices: PackedInt32Array,
 			base: Vector3, dir: Vector3, outward: Vector3,
 			s0: float, s1: float, y0: float, y1: float) -> void:
-	_add_face(vertices, normals, uvs, indices, PackedVector3Array([
+	MeshBuildUtil.add_face(vertices, normals, uvs, indices, PackedVector3Array([
 		_wall_point(base, dir, s0, y0), _wall_point(base, dir, s1, y0),
 		_wall_point(base, dir, s1, y1), _wall_point(base, dir, s0, y1),
 	]), outward, PackedVector2Array([
@@ -236,19 +238,19 @@ static func _add_tunnel(vertices: PackedVector3Array, normals: PackedVector3Arra
 	var b1 := f1 - outward * depth
 	var b2 := f2 - outward * depth
 	var b3 := f3 - outward * depth
-	_add_face(vertices, normals, uvs, indices,
+	MeshBuildUtil.add_face(vertices, normals, uvs, indices,
 		PackedVector3Array([f0, f1, b1, b0]), Vector3.UP,
 		PackedVector2Array([Vector2(s0, 0), Vector2(s1, 0), Vector2(s1, depth), Vector2(s0, depth)]))
-	_add_face(vertices, normals, uvs, indices,
+	MeshBuildUtil.add_face(vertices, normals, uvs, indices,
 		PackedVector3Array([f3, b3, b2, f2]), Vector3.DOWN,
 		PackedVector2Array([Vector2(s0, 0), Vector2(s0, depth), Vector2(s1, depth), Vector2(s1, 0)]))
-	_add_face(vertices, normals, uvs, indices,
+	MeshBuildUtil.add_face(vertices, normals, uvs, indices,
 		PackedVector3Array([f0, b0, b3, f3]), dir,
 		PackedVector2Array([Vector2(0, y0), Vector2(depth, y0), Vector2(depth, y1), Vector2(0, y1)]))
-	_add_face(vertices, normals, uvs, indices,
+	MeshBuildUtil.add_face(vertices, normals, uvs, indices,
 		PackedVector3Array([f1, f2, b2, b1]), -dir,
 		PackedVector2Array([Vector2(0, y0), Vector2(0, y1), Vector2(depth, y1), Vector2(depth, y0)]))
-	_add_face(vertices, normals, uvs, indices,
+	MeshBuildUtil.add_face(vertices, normals, uvs, indices,
 		PackedVector3Array([b0, b1, b2, b3]), outward,
 		PackedVector2Array([Vector2(s0, y0), Vector2(s1, y0), Vector2(s1, y1), Vector2(s0, y1)]))
 
@@ -264,7 +266,7 @@ static func _unique_sorted(values: Array[float]) -> Array[float]:
 static func _frame(size: Vector3, width: float, door: bool) -> ArrayMesh:
 	var mesh := _rect_ring(size, width)
 	if not door:
-		var mullion := _boxes([{
+		var mullion := MeshBuildUtil.boxes([{
 			"size": Vector3(width * 0.45, size.y, size.z * 0.65),
 			"center": Vector3(0.0, 0.0, size.z * 0.5),
 		}])
@@ -273,7 +275,7 @@ static func _frame(size: Vector3, width: float, door: bool) -> ArrayMesh:
 		surface.append_from(mesh, 0, Transform3D.IDENTITY)
 		surface.append_from(mullion, 0, Transform3D.IDENTITY)
 		mesh = surface.commit()
-	var panel := _boxes([{
+	var panel := MeshBuildUtil.boxes([{
 		"size": Vector3(size.x - width * 2.0, size.y - width * 2.0, size.z * 0.18),
 		"center": Vector3(0.0, 0.0, size.z * 0.12),
 	}])
@@ -318,7 +320,7 @@ static func _rect_ring(size: Vector3, width: float) -> ArrayMesh:
 			Vector3(oa.x, oa.y, 0.0), Vector3(ob.x, ob.y, 0.0),
 			Vector3(ib.x, ib.y, 0.0), Vector3(ia.x, ia.y, 0.0),
 		]), Vector3.FORWARD)
-	return _mesh(vertices, normals, uvs, indices)
+	return MeshBuildUtil.mesh(vertices, normals, uvs, indices)
 
 static func _ring_face(vertices: PackedVector3Array, normals: PackedVector3Array,
 			uvs: PackedVector2Array, indices: PackedInt32Array,
@@ -331,7 +333,7 @@ static func _ring_face(vertices: PackedVector3Array, normals: PackedVector3Array
 			face_uvs.append(Vector2(point.z, point.y))
 		else:
 			face_uvs.append(Vector2(point.x, point.z))
-	_add_face(vertices, normals, uvs, indices, points, normal, face_uvs)
+	MeshBuildUtil.add_face(vertices, normals, uvs, indices, points, normal, face_uvs)
 
 static func _roof_drying_rack(size: Vector3) -> ArrayMesh:
 	var parts: Array = []
@@ -340,7 +342,7 @@ static func _roof_drying_rack(size: Vector3) -> ArrayMesh:
 		parts.append({"size": Vector3(0.2, 0.055, size.z), "center": Vector3(size.x * x, -size.y * 0.48, 0.0)})
 	for z in [-0.32, 0.32]:
 		parts.append({"size": Vector3(size.x * 0.88, 0.05, 0.05), "center": Vector3(0.0, size.y * 0.45, size.z * z)})
-	return _boxes(parts)
+	return MeshBuildUtil.boxes(parts)
 
 static func _window_drying(size: Vector3, clothes: bool) -> ArrayMesh:
 	var rod_y := size.y * 0.32 if clothes else 0.0
@@ -349,13 +351,13 @@ static func _window_drying(size: Vector3, clothes: bool) -> ArrayMesh:
 		parts.append({"size": Vector3(0.05, 0.05, size.z * 0.94), "center": Vector3(size.x * x, rod_y - 0.04, size.z * 0.47)})
 	for z in [0.58, 0.88]:
 		parts.append({"size": Vector3(size.x * 0.92, 0.045, 0.045), "center": Vector3(0.0, rod_y, size.z * z)})
-	var mesh := _boxes(parts)
+	var mesh := MeshBuildUtil.boxes(parts)
 	if clothes:
 		var panels: Array = []
 		for x in [-0.32, 0.0, 0.32]:
 			panels.append({"size": Vector3(0.26, size.y * 0.72, 0.025),
 				"center": Vector3(x, rod_y - size.y * 0.32, size.z * 0.88)})
-		var cloth := _boxes(panels)
+		var cloth := MeshBuildUtil.boxes(panels)
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, cloth.surface_get_arrays(0))
 	return mesh
 
@@ -370,11 +372,11 @@ static func _balcony(size: Vector3) -> ArrayMesh:
 	for x in [-0.47, 0.47]:
 		parts.append({"size": Vector3(0.06, 0.06, size.z * 0.94),
 			"center": Vector3(size.x * x, size.y * 0.4, size.z * 0.49)})
-	return _boxes(parts)
+	return MeshBuildUtil.boxes(parts)
 
 static func _double_door(size: Vector3, width: float) -> ArrayMesh:
 	var frame := _rect_ring(Vector3(size.x * 0.9, size.y * 0.82, 0.14), width)
-	var canopy := _boxes([
+	var canopy := MeshBuildUtil.boxes([
 		{"size": Vector3(size.x, 0.1, size.z), "center": Vector3(0.0, size.y * 0.43, size.z * 0.5)},
 		{"size": Vector3(0.08, 0.5, size.z * 0.62), "center": Vector3(-size.x * 0.38, size.y * 0.31, size.z * 0.28),
 			"basis": Basis(Vector3.RIGHT, deg_to_rad(32.0))},
@@ -387,7 +389,7 @@ static func _double_door(size: Vector3, width: float) -> ArrayMesh:
 	surface.append_from(canopy, 0, Transform3D.IDENTITY)
 	var mesh := surface.commit()
 	var panel_width := (size.x * 0.9 - width * 2.0 - 0.04) * 0.5
-	var panels := _boxes([
+	var panels := MeshBuildUtil.boxes([
 		{"size": Vector3(panel_width, size.y * 0.68, 0.04),
 			"center": Vector3(-panel_width * 0.5 - 0.02, -size.y * 0.1, 0.04)},
 		{"size": Vector3(panel_width, size.y * 0.68, 0.04),
@@ -411,51 +413,19 @@ static func foundation(polygon: PackedVector2Array, terrain: PCGBuildingPlan, ba
 		var p1 := Vector3(b.x, terrain.terrain_height_at(b) - base - 0.08, b.y)
 		var p2 := Vector3(b.x, 0.0, b.y)
 		var p3 := Vector3(a.x, 0.0, a.y)
-		_add_face(vertices, normals, uvs, indices, PackedVector3Array([p0, p1, p2, p3]), outward,
+		MeshBuildUtil.add_face(vertices, normals, uvs, indices, PackedVector3Array([p0, p1, p2, p3]), outward,
 			PackedVector2Array([Vector2.ZERO, Vector2(edge.length(), 0.0), Vector2(edge.length(), p2.y), Vector2(0.0, p3.y)]))
 	var triangles := Geometry2D.triangulate_polygon(polygon)
 	for index in range(0, triangles.size(), 3):
 		var a := polygon[triangles[index]]
 		var b := polygon[triangles[index + 1]]
 		var c := polygon[triangles[index + 2]]
-		_add_face(vertices, normals, uvs, indices, PackedVector3Array([
+		MeshBuildUtil.add_face(vertices, normals, uvs, indices, PackedVector3Array([
 			Vector3(a.x, 0.0, a.y), Vector3(b.x, 0.0, b.y), Vector3(c.x, 0.0, c.y),
 		]), Vector3.UP, PackedVector2Array([a, b, c]))
-		_add_face(vertices, normals, uvs, indices, PackedVector3Array([
+		MeshBuildUtil.add_face(vertices, normals, uvs, indices, PackedVector3Array([
 			Vector3(c.x, terrain.terrain_height_at(c) - base - 0.08, c.y),
 			Vector3(b.x, terrain.terrain_height_at(b) - base - 0.08, b.y),
 			Vector3(a.x, terrain.terrain_height_at(a) - base - 0.08, a.y),
 		]), Vector3.DOWN, PackedVector2Array([c, b, a]))
-	return _mesh(vertices, normals, uvs, indices)
-
-static func _boxes(parts: Array) -> ArrayMesh:
-	var surface := SurfaceTool.new()
-	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for part in parts:
-		var box := BoxMesh.new()
-		box.size = part["size"]
-		var basis: Basis = part.get("basis", Basis.IDENTITY)
-		surface.append_from(box, 0, Transform3D(basis, part["center"]))
-	return surface.commit()
-
-static func _mesh(vertices: PackedVector3Array, normals: PackedVector3Array,
-			uvs: PackedVector2Array, indices: PackedInt32Array) -> ArrayMesh:
-	var arrays: Array = []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_NORMAL] = normals
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
-
-static func _add_face(vertices: PackedVector3Array, normals: PackedVector3Array,
-			uvs: PackedVector2Array, indices: PackedInt32Array,
-			points: PackedVector3Array, normal: Vector3, face_uvs: PackedVector2Array) -> void:
-	for corner in range(1, points.size() - 1):
-		for index in [0, corner, corner + 1]:
-			indices.append(vertices.size())
-			vertices.append(points[index])
-			normals.append(normal)
-			uvs.append(face_uvs[index])
+	return MeshBuildUtil.mesh(vertices, normals, uvs, indices)

@@ -7,6 +7,7 @@ const Generator = preload("res://scripts/building/building_generator.gd")
 const PlanEditor = preload("res://scripts/building/building_plan_editor.gd")
 const Connector = preload("res://scripts/building/skybridge_connector.gd")
 const SkybridgeGen = preload("res://scripts/building/skybridge_generator.gd")
+const MeshBuildUtil = preload("res://addons/pcg_shared/mesh_build_util.gd")
 
 class FitIconButton extends Button:
 	func _draw() -> void:
@@ -745,21 +746,12 @@ func _update_stats() -> void:
 			match String(child.get_meta("bridge_role", "")):
 				"skybridge":
 					bridges += 1
-					triangles += _mesh_triangles(child.mesh)
+					triangles += MeshBuildUtil.triangle_count(child.mesh)
 				"skybridge_junction":
 					junctions += 1
-					triangles += _mesh_triangles(child.mesh)
+					triangles += MeshBuildUtil.triangle_count(child.mesh)
 	stats_label.text = "%d 个面岛 / 建筑\n%d 个标准组件实例\n%d 条廊桥 · %d 个交叉合并结构\n约 %d 个三角形（含实例）" % [
 		building_nodes.size(), components, bridges, junctions, triangles]
-
-func _mesh_triangles(mesh: Mesh) -> int:
-	var count := 0
-	if mesh == null:
-		return 0
-	for surface in mesh.get_surface_count():
-		var indices = mesh.surface_get_arrays(surface)[Mesh.ARRAY_INDEX]
-		count += int(indices.size() / 3) if indices != null else 0
-	return count
 
 func _on_building_move_started(id: StringName) -> void:
 	if not plan_editor.selected_ids.has(id):

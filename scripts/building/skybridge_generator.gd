@@ -11,6 +11,7 @@ const Connector = preload("res://scripts/building/skybridge_connector.gd")
 const Bridge = preload("res://scripts/building/skybridge_definition.gd")
 const Component = preload("res://scripts/building/building_component_definition.gd")
 const MeshFactory = preload("res://scripts/building/building_mesh_factory.gd")
+const MeshBuildUtil = preload("res://addons/pcg_shared/mesh_build_util.gd")
 
 const MERGE_OVERLAP := 0.6
 const CLEARANCE := 0.6
@@ -185,17 +186,17 @@ func build_network(plan: PCGBuildingPlan,
 			visual.set_surface_override_material(surface, preload("res://addons/pcg_shared/pcg_material_access.gd").library().solid(
 				material_id, surface_color, roughness))
 		root.add_child(visual)
-		triangle_count += _triangle_count(mesh)
+		triangle_count += MeshBuildUtil.triangle_count(mesh)
 	var junction_index := 0
 	for part in junction_mesh_parts:
 		var box := MeshInstance3D.new()
 		box.name = "SkybridgeJunction_%d" % junction_index
-		box.mesh = _boxes([part])
+		box.mesh = MeshBuildUtil.boxes([part])
 		box.material_override = preload("res://addons/pcg_shared/pcg_material_access.gd").library().solid(&"building/skybridge_junction", Color("5d7f8c"), 0.4)
 		box.set_meta("bridge_role", "skybridge_junction")
 		box.set_meta("junction_index", junction_index)
 		root.add_child(box)
-		triangle_count += _triangle_count(box.mesh)
+		triangle_count += MeshBuildUtil.triangle_count(box.mesh)
 		junction_index += 1
 	root.set_meta("junctions", junctions)
 	root.set_meta("lifted", lifted)
@@ -318,13 +319,13 @@ func _bridge_mesh(bridge: PCGSkybridgeDefinition,
 	for anchor in anchors:
 		if _append_portal(frame, anchor, groups["portal"]):
 			portal_count += 1
-	var mesh := _mesh(frame[0], frame[1], frame[2], frame[3])
+	var mesh := MeshBuildUtil.mesh(frame[0], frame[1], frame[2], frame[3])
 	var accent := _swept_arrays(path, groups["accent"])
 	var baluster_count := _append_interval_balusters(path, groups["baluster"], accent)
-	var accent_mesh := _mesh(accent[0], accent[1], accent[2], accent[3])
+	var accent_mesh := MeshBuildUtil.mesh(accent[0], accent[1], accent[2], accent[3])
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, accent_mesh.surface_get_arrays(0))
 	var roof := _swept_arrays(path, groups["roof"])
-	var roof_mesh := _mesh(roof[0], roof[1], roof[2], roof[3])
+	var roof_mesh := MeshBuildUtil.mesh(roof[0], roof[1], roof[2], roof[3])
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, roof_mesh.surface_get_arrays(0))
 	return {"mesh": mesh, "post_count": post_count, "baluster_count": baluster_count,
 		"portal_count": portal_count}
@@ -442,22 +443,22 @@ func _append_oriented_box(arrays: Array, right: Vector3, up: Vector3, forward: V
 	var rd_f := rd + forward * hz
 	var ru_f := ru + forward * hz
 	var lu_f := lu + forward * hz
-	_add_quad(vertices, normals, uvs, indices,
+	MeshBuildUtil.add_quad(vertices, normals, uvs, indices,
 		[ld_b, ld_f, rd_f, rd_b],
 		[Vector2(0, 0), Vector2(hz * 2, 0), Vector2(hz * 2, size.x), Vector2(0, size.x)])
-	_add_quad(vertices, normals, uvs, indices,
+	MeshBuildUtil.add_quad(vertices, normals, uvs, indices,
 		[lu_b, ru_b, ru_f, lu_f],
 		[Vector2(0, 0), Vector2(0, size.x), Vector2(hz * 2, size.x), Vector2(hz * 2, 0)])
-	_add_quad(vertices, normals, uvs, indices,
+	MeshBuildUtil.add_quad(vertices, normals, uvs, indices,
 		[ld_b, lu_b, lu_f, ld_f],
 		[Vector2(0, 0), Vector2(0, size.y), Vector2(hz * 2, size.y), Vector2(hz * 2, 0)])
-	_add_quad(vertices, normals, uvs, indices,
+	MeshBuildUtil.add_quad(vertices, normals, uvs, indices,
 		[rd_f, ru_f, ru_b, rd_b],
 		[Vector2(hz * 2, 0), Vector2(hz * 2, size.y), Vector2(0, size.y), Vector2(0, 0)])
-	_add_quad(vertices, normals, uvs, indices,
+	MeshBuildUtil.add_quad(vertices, normals, uvs, indices,
 		[ld_b, rd_b, ru_b, lu_b],
 		[Vector2(0, 0), Vector2(size.x, 0), Vector2(size.x, size.y), Vector2(0, size.y)])
-	_add_quad(vertices, normals, uvs, indices,
+	MeshBuildUtil.add_quad(vertices, normals, uvs, indices,
 		[ld_f, lu_f, ru_f, rd_f],
 		[Vector2(size.x, 0), Vector2(size.x, size.y), Vector2(0, size.y), Vector2(0, 0)])
 
@@ -501,25 +502,25 @@ func _sweep_part(path: PackedVector3Array, part: Dictionary, distances: Array[fl
 		var b: Dictionary = rings[index + 1]
 		var u0: float = distances[index]
 		var u1: float = distances[index + 1]
-		_add_quad(vertices, normals, uvs, indices,
+		MeshBuildUtil.add_quad(vertices, normals, uvs, indices,
 			[a["ld"], b["ld"], b["rd"], a["rd"]],
 			[Vector2(u0, 0.0), Vector2(u1, 0.0), Vector2(u1, width), Vector2(u0, width)])
-		_add_quad(vertices, normals, uvs, indices,
+		MeshBuildUtil.add_quad(vertices, normals, uvs, indices,
 			[a["lu"], a["ru"], b["ru"], b["lu"]],
 			[Vector2(u0, 0.0), Vector2(u0, width), Vector2(u1, width), Vector2(u1, 0.0)])
-		_add_quad(vertices, normals, uvs, indices,
+		MeshBuildUtil.add_quad(vertices, normals, uvs, indices,
 			[a["ld"], a["lu"], b["lu"], b["ld"]],
 			[Vector2(u0, 0.0), Vector2(u0, height), Vector2(u1, height), Vector2(u1, 0.0)])
-		_add_quad(vertices, normals, uvs, indices,
+		MeshBuildUtil.add_quad(vertices, normals, uvs, indices,
 			[b["rd"], b["ru"], a["ru"], a["rd"]],
 			[Vector2(u1, 0.0), Vector2(u1, height), Vector2(u0, height), Vector2(u0, 0.0)])
 	var first_ring: Dictionary = rings[0]
 	var last_ring: Dictionary = rings[rings.size() - 1]
 	var total: float = distances[distances.size() - 1]
-	_add_quad(vertices, normals, uvs, indices,
+	MeshBuildUtil.add_quad(vertices, normals, uvs, indices,
 		[first_ring["ld"], first_ring["rd"], first_ring["ru"], first_ring["lu"]],
 		[Vector2(0.0, 0.0), Vector2(width, 0.0), Vector2(width, height), Vector2(0.0, height)])
-	_add_quad(vertices, normals, uvs, indices,
+	MeshBuildUtil.add_quad(vertices, normals, uvs, indices,
 		[last_ring["ld"], last_ring["lu"], last_ring["ru"], last_ring["rd"]],
 		[Vector2(total, 0.0), Vector2(total, height), Vector2(0.0, height), Vector2(0.0, 0.0)])
 
@@ -531,41 +532,4 @@ func _frame_forward(path: PackedVector3Array, index: int) -> Vector3:
 		return Vector3.FORWARD
 	return forward.normalized()
 
-func _add_quad(vertices: PackedVector3Array, normals: PackedVector3Array,
-			uvs: PackedVector2Array, indices: PackedInt32Array,
-			points: Array, quad_uvs: Array) -> void:
-	var normal: Vector3 = (points[1] - points[0]).cross(points[3] - points[0]).normalized()
-	for corner in [0, 1, 2, 0, 2, 3]:
-		indices.append(vertices.size())
-		vertices.append(points[corner])
-		normals.append(normal)
-		uvs.append(quad_uvs[corner])
 
-func _boxes(parts: Array) -> ArrayMesh:
-	var surface := SurfaceTool.new()
-	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for part in parts:
-		var box := BoxMesh.new()
-		box.size = part["size"]
-		var basis: Basis = part.get("basis", Basis.IDENTITY)
-		surface.append_from(box, 0, Transform3D(basis, part["center"]))
-	return surface.commit()
-
-func _mesh(vertices: PackedVector3Array, normals: PackedVector3Array,
-			uvs: PackedVector2Array, indices: PackedInt32Array) -> ArrayMesh:
-	var arrays: Array = []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_NORMAL] = normals
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
-
-func _triangle_count(mesh: Mesh) -> int:
-	var count := 0
-	for surface in mesh.get_surface_count():
-		var indices = mesh.surface_get_arrays(surface)[Mesh.ARRAY_INDEX]
-		count += int(indices.size() / 3) if indices != null else 0
-	return count
