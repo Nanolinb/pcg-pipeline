@@ -19,6 +19,7 @@ extends Resource
 @export var balcony_component_id: StringName = &"balcony_basic"
 @export var double_door_component_id: StringName = &"double_door_canopy_basic"
 @export var use_double_entrance: bool = false
+var ground_elevation: float = 0.0
 
 func normalized_polygon() -> PackedVector2Array:
 	var result := PackedVector2Array()

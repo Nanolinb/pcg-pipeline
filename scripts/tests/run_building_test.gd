@@ -40,7 +40,7 @@ func _run() -> void:
 	_check(role_counts.get(DefinitionRole("WINDOW"), 0) > 20, "立面应生成窗户阵列")
 	_check(role_counts.get(DefinitionRole("PARAPET"), 0) == 14, "女儿墙应覆盖全部轮廓边")
 	_check(role_counts.get(DefinitionRole("ROOF_HATCH"), 0) == 3, "每栋建筑应有屋顶组件")
-	_check(role_counts.get(DefinitionRole("ROOF_DRYING_RACK"), 0) == 3, "有效屋顶应生成晾衣架")
+	_check(role_counts.get(DefinitionRole("ROOF_DRYING_RACK"), 0) == 1, "只有同时容纳检修屋和晾衣架的屋顶才生成晾衣架")
 	_check(role_counts.get(DefinitionRole("BALCONY"), 0) >= 3, "每栋建筑应至少有一个小阳台")
 	var component_ids := _meta_counts(result["root"], "component_id")
 	_check(component_ids.get(&"window_drying_rod_basic", 0) > 0, "立面应包含空晾衣杆")
@@ -50,6 +50,13 @@ func _run() -> void:
 	var corner_polygon := plan.get_footprint(&"house_l").normalized_polygon()
 	_check(not generator._corner_clearance(corner_polygon, 2, 0.02, catalog.get_definition(&"window_basic")), "凹角附近的窗户必须被净空规则拒绝")
 	_check(not _entrances_hit_other_buildings(result["root"], plan, generator, catalog), "入口及遮阳顶不得插入其他建筑")
+	_check(_roof_racks_fit(result["root"], plan, generator, catalog), "晾衣架完整占地不得穿出女儿墙或碰到检修屋")
+	var tiny := PCGBuildingFootprint.new()
+	tiny.id = &"tiny_roof"
+	tiny.polygon = PackedVector2Array([Vector2(-0.55, -0.55), Vector2(0.55, -0.55), Vector2(0.55, 0.55), Vector2(-0.55, 0.55)])
+	var tiny_result := generator.build_building(tiny, plan.master_seed, catalog)
+	_check(_role_counts(tiny_result["root"]).get(DefinitionRole("ROOF_DRYING_RACK"), 0) == 0, "明显过小的屋顶不得生成晾衣架")
+	tiny_result["root"].free()
 	plan.get_footprint(&"house_l").window_component_id = &"missing_window"
 	var invalid := generator.build_plan(plan, catalog)
 	_check(invalid["root"] == null and not invalid["errors"].is_empty(), "缺失组件必须拒绝生成且不留半份结果")
@@ -82,6 +89,26 @@ func _run() -> void:
 	workbench._on_seed_changed(77.0)
 	_check(selected.seed == 77 and workbench.building_nodes[&"house_l"] != before_seed, "细节种子修改应立即自动重建当前建筑")
 	workbench.undo_redo.undo()
+	var move_origin: Vector2 = selected.polygon[0]
+	var tracked_connector: PCGSkybridgeConnector = workbench.plan.get_connector(&"conn_l_tower")
+	var anchor_before: Vector3 = tracked_connector.anchor(selected)["position"]
+	workbench._on_building_move_started(selected.id)
+	workbench._on_building_moved(selected.id, Vector2(0.5, 0.25))
+	workbench._on_building_move_finished(selected.id)
+	_check(selected.polygon[0].distance_to(move_origin + Vector2(0.5, 0.25)) < 0.001 and workbench.building_nodes[&"house_tower"] == untouched, "整栋平移应移动轮廓且不重建其他建筑")
+	var anchor_after: Vector3 = tracked_connector.anchor(selected)["position"]
+	_check((anchor_after - anchor_before).distance_to(Vector3(0.5, 0.0, 0.25)) < 0.001, "主体平移时其廊桥结合点必须跟随")
+	workbench.undo_redo.undo()
+	_check(workbench.plan.get_footprint(&"house_l").polygon[0].distance_to(move_origin) < 0.001, "撤销平移应恢复建筑原始位置")
+	var building_before: Node3D = workbench.building_nodes[selected.id]
+	var outline_before := selected.polygon.duplicate()
+	workbench._set_editor_mode(PCGBuildingPlanEditor.InteractionMode.BRIDGE_NODE, "桥节点测试")
+	var active_bridge: PCGSkybridgeDefinition = workbench.plan.get_skybridge(&"bridge_demo")
+	var bridge_point: Vector3 = active_bridge.node_positions()[1]
+	bridge_point.x += 0.5
+	workbench._on_bridge_node_moved(active_bridge.id, 1, bridge_point)
+	_check(workbench.building_nodes[selected.id] == building_before and selected.polygon == outline_before, "桥节点编辑不得重建或修改建筑主体")
+	_check(workbench.plan_editor.interaction_mode == PCGBuildingPlanEditor.InteractionMode.BRIDGE_NODE, "模式切换应明确隔离主体与廊桥编辑")
 	var old_height: float = selected.height()
 	workbench._on_floors_changed(6.0)
 	_check(selected.floors == 6 and selected.height() > old_height, "楼层参数应改变建筑高度")
@@ -97,12 +124,73 @@ func _run() -> void:
 	_check(workbench.plan.footprints.size() == before_count, "撤销切分应恢复原平面")
 	workbench._add_footprint()
 	_check(workbench.plan.footprints.size() == before_count + 1, "新增面岛应使用完整默认组件绑定")
+	var added: PCGBuildingFootprint = workbench.plan.get_footprint(&"house_4")
+	_check(not _has_building_overlap(workbench.plan, added.id), "新增建筑不得与现有建筑轮廓重叠")
+	var added_center: Vector2 = workbench._polygon_bounds(added.normalized_polygon()).get_center()
+	var existing_density := 0.0
+	for existing in workbench.plan.footprints:
+		if existing.id != added.id:
+			existing_density = maxf(existing_density, workbench._density_at(workbench._polygon_bounds(existing.normalized_polygon()).get_center()))
+	_check(workbench._density_at(added_center) < existing_density, "新增位置应低于现有密集区域的密度")
+	var added_data := added.semantic_data()
+	workbench._add_footprint()
+	var next_added: PCGBuildingFootprint = workbench.plan.get_footprint(&"house_5")
+	_check(next_added != null and next_added.semantic_data() != added_data, "连续新建应产生不同的轮廓和参数")
+	workbench.undo_redo.undo()
+	_check(workbench.plan.footprints.size() == before_count + 1, "连续新建撤销一次应只移除后一栋")
 	workbench.undo_redo.undo()
 	_check(workbench.plan.footprints.size() == before_count, "撤销新增应删除新面岛")
+	workbench._add_footprint()
+	_check(workbench.plan.get_footprint(&"house_4").semantic_data() == added_data, "相同平面与新建 ID 应复现相同建筑")
+	workbench.undo_redo.undo()
 	workbench._delete_selected()
 	_check(workbench.plan.footprints.size() == before_count - 1, "删除应移除选中面岛")
 	workbench.undo_redo.undo()
 	_check(workbench.plan.footprints.size() == before_count, "撤销删除应恢复全部生成输入")
+	workbench.plan.connectors.clear()
+	workbench.plan.skybridges.clear()
+	var first := PCGBuildingFootprint.new()
+	first.id = &"fuse_a"
+	first.polygon = PackedVector2Array([Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)])
+	var other_footprint := PCGBuildingFootprint.new()
+	other_footprint.id = &"fuse_b"
+	other_footprint.polygon = PackedVector2Array([Vector2(0, -1), Vector2(2, -1), Vector2(2, 1), Vector2(0, 1)])
+	workbench.plan.footprints.assign([first, other_footprint])
+	workbench._set_editor_mode(PCGBuildingPlanEditor.InteractionMode.FOOTPRINT, "主体融合测试")
+	workbench._sync_plan()
+	workbench._select_footprint(first.id)
+	_check(workbench.fusion_button.disabled, "单选建筑时融合按钮必须禁用")
+	var multi_press := InputEventMouseButton.new()
+	multi_press.button_index = MOUSE_BUTTON_LEFT
+	multi_press.pressed = true
+	multi_press.shift_pressed = true
+	multi_press.position = workbench.plan_editor.world_to_screen(Vector2(1.0, 0.0))
+	workbench.plan_editor._gui_input(multi_press)
+	var multi_release := InputEventMouseButton.new()
+	multi_release.button_index = MOUSE_BUTTON_LEFT
+	multi_release.pressed = false
+	multi_release.shift_pressed = true
+	multi_release.position = multi_press.position
+	workbench.plan_editor._gui_input(multi_release)
+	_check(workbench.selected_ids.size() == 2 and not workbench.fusion_button.disabled, "Shift 多选相交建筑后融合按钮必须启用")
+	workbench._fuse_selected()
+	var fused: PCGBuildingFootprint = workbench.plan.get_footprint(&"fuse_b")
+	_check(workbench.plan.footprints.size() == 1 and fused != null and absf(PCGBuildingFootprint.signed_area(fused.polygon)) > 4.0, "选中的相交建筑应融合为更大的单一轮廓")
+	_check(workbench.fusion_button.disabled, "融合完成恢复单选后按钮应重新禁用")
+	workbench.undo_redo.undo()
+	_check(workbench.plan.footprints.size() == 2, "撤销融合应恢复两栋独立建筑")
+	first = workbench.plan.get_footprint(&"fuse_a")
+	workbench._toggle_terrain()
+	var foundation := workbench.building_nodes[first.id].get_node_or_null("SlopeFoundation") as MeshInstance3D
+	_check(foundation != null and first.ground_elevation > 0.0, "斜坡应生成基础并设置建筑基准标高")
+	_check(foundation != null and inspector.inspect_mesh(foundation.mesh)["ok"], "斜坡基础必须为封闭无退化 Mesh")
+	var base_before: float = first.ground_elevation
+	workbench._on_building_move_started(first.id)
+	workbench._on_building_moved(first.id, Vector2(1.0, 0.0))
+	workbench._on_building_move_finished(first.id)
+	_check(first.ground_elevation > base_before, "斜坡上平移建筑应重新计算基准标高")
+	workbench._toggle_terrain()
+	_check(is_zero_approx(first.ground_elevation), "关闭斜坡后建筑应回到水平地面")
 	var pan_origin: Vector2 = workbench.plan_editor.world_to_screen(Vector2.ZERO)
 	var pan_press := InputEventMouseButton.new()
 	pan_press.button_index = MOUSE_BUTTON_RIGHT
@@ -127,7 +215,7 @@ func _run() -> void:
 	_check(_all_footprints_visible(workbench.plan_editor), "适配全部应把全部建筑轮廓收入视口")
 	workbench._open_detail_window()
 	_check(workbench.detail_window.visible and workbench.detail_plan_editor.plan == workbench.plan, "独立窗口应共享同一份可编辑平面")
-	workbench.detail_plan_editor.footprint_selected.emit(&"house_tower")
+	workbench.detail_plan_editor.footprint_selected.emit(&"house_tower", false)
 	_check(workbench.selected_id == &"house_tower" and workbench.plan_editor.selected_id == &"house_tower", "独立窗口选择应同步回原顶视图")
 	workbench.detail_window.hide()
 	_check(not workbench.detail_window.visible, "独立窗口关闭应保留主工作台")
@@ -184,7 +272,9 @@ func DefinitionRole(role: String) -> int:
 func _role_counts(root: Node3D) -> Dictionary:
 	var counts: Dictionary = {}
 	for building in root.get_children():
-		var components := building.get_node("StandardComponents")
+		var components := building as Node if building.name == "StandardComponents" else building.get_node_or_null("StandardComponents")
+		if components == null:
+			continue
 		for component in components.get_children():
 			var role: int = component.get_meta("component_role")
 			counts[role] = int(counts.get(role, 0)) + 1
@@ -257,6 +347,49 @@ func _entrances_hit_other_buildings(root: Node3D, plan: PCGBuildingPlan,
 			var definition := catalog.get_definition(component.get_meta("component_id"))
 			var bounds: AABB = generator._component_bounds(definition, component.transform, Vector3.ONE)
 			if generator._hits_obstacles(bounds, building.get_meta("footprint_id"), plan.footprints):
+				return true
+	return false
+
+func _roof_racks_fit(root: Node3D, plan: PCGBuildingPlan,
+			generator: PCGBuildingGenerator, catalog: PCGBuildingComponentCatalog) -> bool:
+	for building in root.get_children():
+		var rack: MeshInstance3D = null
+		var hatch: MeshInstance3D = null
+		for component in building.get_node("StandardComponents").get_children():
+			if component.get_meta("component_role") == PCGBuildingComponentDefinition.Role.ROOF_DRYING_RACK:
+				rack = component
+			elif component.get_meta("component_role") == PCGBuildingComponentDefinition.Role.ROOF_HATCH:
+				hatch = component
+		if rack == null:
+			continue
+		var footprint := plan.get_footprint(building.get_meta("footprint_id"))
+		var parapet := catalog.get_definition(footprint.parapet_component_id)
+		var usable_parts := Geometry2D.offset_polygon(footprint.normalized_polygon(), -(parapet.size.z * 0.5 + 0.12), Geometry2D.JOIN_MITER)
+		var bounds := generator._component_bounds(catalog.get_definition(rack.get_meta("component_id")), rack.transform, Vector3.ONE)
+		var rect := PackedVector2Array([
+			Vector2(bounds.position.x, bounds.position.z), Vector2(bounds.end.x, bounds.position.z),
+			Vector2(bounds.end.x, bounds.end.z), Vector2(bounds.position.x, bounds.end.z),
+		])
+		var fits := false
+		for usable in usable_parts:
+			fits = fits or generator._rect_inside_polygon(rect, usable)
+		if not fits:
+			return false
+		if hatch != null:
+			var hatch_bounds := generator._component_bounds(catalog.get_definition(hatch.get_meta("component_id")), hatch.transform, Vector3.ONE)
+			if bounds.grow(-0.02).intersects(hatch_bounds):
+				return false
+	return true
+
+func _has_building_overlap(plan: PCGBuildingPlan, id: StringName) -> bool:
+	var target := plan.get_footprint(id)
+	if target == null:
+		return false
+	for other in plan.footprints:
+		if other == null or other.id == id:
+			continue
+		for part in Geometry2D.intersect_polygons(target.normalized_polygon(), other.normalized_polygon()):
+			if absf(PCGBuildingFootprint.signed_area(part)) > 0.001:
 				return true
 	return false
 

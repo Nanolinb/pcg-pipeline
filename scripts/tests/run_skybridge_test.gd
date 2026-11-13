@@ -16,6 +16,7 @@ func _run() -> void:
 	var generator := PCGSkybridgeGenerator.new()
 	_test_connector_and_bridge_creation(generator, catalog)
 	_test_window_avoidance(catalog)
+	_test_doorway_cut(catalog)
 	_test_node_editing()
 	_test_cross_merge_and_lift(generator, catalog)
 	_test_sloped_bridge(generator, catalog)
@@ -53,6 +54,7 @@ func _test_connector_and_bridge_creation(generator: PCGSkybridgeGenerator, catal
 	_check(bridge != null and bridge.nodes.size() == 3, "默认廊桥应包含起终与中间三个节点")
 	_check(is_equal_approx(bridge.width, 2.0) and is_equal_approx(bridge.height, 3.0),
 		"廊桥截面尺寸应取自标准组件")
+	plan.skybridges.append(bridge)
 	var result := generator.build_network(plan, catalog)
 	_check(result["errors"].is_empty(), "廊桥网络应成功生成：%s" % "; ".join(result["errors"]))
 	_check(result["root"] != null, "廊桥网络应产生显示根节点")
@@ -60,10 +62,18 @@ func _test_connector_and_bridge_creation(generator: PCGSkybridgeGenerator, catal
 	var inspector := PCGAssetMeshInspector.new()
 	var bridge_visual: MeshInstance3D = result["root"].get_child(0)
 	var inspection := inspector.inspect_mesh(bridge_visual.mesh)
-	_check(inspection["ok"], "廊桥扫掠网格应封闭且无退化面：%s" % inspection["errors"])
+	_check(inspection["ok"], "廊桥扫掠网格应封闭且无退化面：%s" % "; ".join(inspection["errors"]))
 	_check(inspection["stats"]["uv0_present"] and inspection["stats"]["normals_present"],
 		"廊桥网格应具备 UV0 和法线")
-	_check(bridge_visual.mesh.get_surface_count() == 2, "廊桥网格应包含结构与围栏两个表面")
+	_check(bridge_visual.mesh.get_surface_count() == 3, "廊桥网格应包含结构/扶手/顶棚三个表面")
+	_check(int(bridge_visual.get_meta("post_count")) == 4,
+		"含伸入门洞的桥长约 4.3m，按 1.6m 间距应等距生成 4 根立柱")
+	_check(int(bridge_visual.get_meta("baluster_count")) == 12,
+		"两侧栏杆应按 0.8m 间距等距生成栏杆立柱")
+	_check(bridge.color.is_equal_approx(
+			plan.get_footprint(&"house_l").wall_color.lerp(
+				plan.get_footprint(&"house_tower").wall_color, 0.5)),
+		"廊桥配色应取两端建筑墙色的中间色")
 	result["root"].free()
 
 func _test_window_avoidance(catalog: PCGBuildingComponentCatalog) -> void:
@@ -83,6 +93,36 @@ func _test_window_avoidance(catalog: PCGBuildingComponentCatalog) -> void:
 		"避让后总窗口数应减少并重新排布")
 	plain["root"].free()
 	avoided["root"].free()
+
+func _test_doorway_cut(catalog: PCGBuildingComponentCatalog) -> void:
+	var footprint := PCGBuildingPlan.demo().get_footprint(&"house_l")
+	var connector := _connector(&"conn_a", &"house_l", 1, 0.5, 1)
+	var plain := PCGBuildingGenerator.new().build_building(footprint, "seed", catalog)
+	var cut := PCGBuildingGenerator.new().build_building(footprint, "seed", catalog,
+		[], [connector.exclusion(footprint)], null, [connector])
+	_check(cut["errors"].is_empty(), "带门洞裁切的建筑应正常生成")
+	var inspector := PCGAssetMeshInspector.new()
+	var plain_body: MeshInstance3D = plain["root"].get_node("DerivedSolid")
+	var cut_body: MeshInstance3D = cut["root"].get_node("DerivedSolid")
+	var plain_inspection := inspector.inspect_mesh(plain_body.mesh)
+	var cut_inspection := inspector.inspect_mesh(cut_body.mesh)
+	_check(plain_inspection["ok"] and cut_inspection["ok"],
+		"裁切门洞后的主体仍应封闭无退化面：%s / %s" % [
+			"; ".join(plain_inspection["errors"]), "; ".join(cut_inspection["errors"])])
+	_check(cut_inspection["stats"]["triangles"] > plain_inspection["stats"]["triangles"],
+		"门洞裁切应使主体三角数增加")
+	_check(absf(_signed_volume(cut_body.mesh)) < absf(_signed_volume(plain_body.mesh)),
+		"门洞内凹裁切应减小主体体积")
+	var doorway_frames := 0
+	var components: Node3D = cut["root"].get_node("StandardComponents")
+	for child in components.get_children():
+		var role: int = int(child.get_meta("component_role", -1))
+		if role == PCGBuildingComponentDefinition.Role.DOOR \
+				or role == PCGBuildingComponentDefinition.Role.DOUBLE_DOOR:
+			doorway_frames += 1
+	_check(doorway_frames >= 2, "门洞处应出现门套组件（含原入口门）")
+	plain["root"].free()
+	cut["root"].free()
 
 func _test_node_editing() -> void:
 	var bridge := PCGSkybridgeDefinition.new()
@@ -122,13 +162,13 @@ func _test_sloped_bridge(generator: PCGSkybridgeGenerator, catalog: PCGBuildingC
 	var bridge: PCGSkybridgeDefinition = generator.make_bridge(plan, low, high, &"bridge_slope", catalog)["bridge"]
 	plan.skybridges.append(bridge)
 	var rise := bridge.node_positions()[2].y - bridge.node_positions()[0].y
-	_check(rise > 4.0, "不同楼层的结合点应产生桥面高差，实测 %0.2f" % rise)
+	_check(rise > 4.0, "不同楼层的结合点应产生桥面高差，实测 %.2f" % rise)
 	var result := generator.build_network(plan, catalog)
 	_check(result["errors"].is_empty(), "坡道廊桥应成功生成：%s" % "; ".join(result["errors"]))
 	var visual: MeshInstance3D = result["root"].get_child(0)
 	var inspector := PCGAssetMeshInspector.new()
 	var inspection := inspector.inspect_mesh(visual.mesh)
-	_check(inspection["ok"], "坡道廊桥网格应封闭且无退化面：%s" % inspection["errors"])
+	_check(inspection["ok"], "坡道廊桥网格应封闭且无退化面：%s" % "; ".join(inspection["errors"]))
 	var deck_min := INF
 	var deck_max := -INF
 	for point in bridge.sampled_path(8):
@@ -231,6 +271,17 @@ func _test_workbench_integration() -> void:
 	workbench.queue_free()
 	await process_frame
 
+func _signed_volume(mesh: Mesh) -> float:
+	var volume := 0.0
+	for surface in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		for index in range(0, indices.size(), 3):
+			volume += vertices[indices[index]].dot(
+				vertices[indices[index + 1]].cross(vertices[indices[index + 2]])) / 6.0
+	return volume
+
 func _connector(id: StringName, building: StringName, edge: int, t: float, floor: int) -> PCGSkybridgeConnector:
 	var connector := Connector.new()
 	connector.id = id
@@ -291,6 +342,8 @@ func _total_windows(building: Node3D) -> int:
 	return count
 
 func _finish() -> void:
+	if checks != 60:
+		failures.append("实际执行检查数 %d 与预期 60 不符，可能存在脚本错误中断了测试" % checks)
 	if failures.is_empty():
 		print("SKYBRIDGE_TEST_RESULT: PASS checks=%d" % checks)
 		quit(0)

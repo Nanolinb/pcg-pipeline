@@ -2,9 +2,12 @@
 class_name PCGBuildingPlanEditor
 extends Control
 
-signal footprint_selected(id: StringName)
+signal footprint_selected(id: StringName, additive: bool)
 signal vertex_drag_started(id: StringName)
 signal footprint_edited(id: StringName)
+signal footprint_move_started(id: StringName)
+signal footprint_moved(id: StringName, delta: Vector2)
+signal footprint_move_finished(id: StringName)
 signal vertex_drag_finished(id: StringName)
 signal connector_placed(building_id: StringName, edge_index: int, edge_t: float)
 signal bridge_node_selected(bridge_id: StringName, node_index: int)
@@ -19,6 +22,7 @@ const EDGE_PICK_RADIUS := 12.0
 
 var plan: PCGBuildingPlan
 var selected_id: StringName = &""
+var selected_ids: Array[StringName] = []
 var interaction_mode: int = InteractionMode.FOOTPRINT
 var selected_bridge_id: StringName = &""
 var selected_node_index: int = -1
@@ -26,6 +30,8 @@ var _drag_id: StringName = &""
 var _drag_vertex: int = -1
 var _drag_bridge: StringName = &""
 var _drag_node: int = -1
+var _drag_building := false
+var _last_building_world := Vector2.ZERO
 var _pan_offset := Vector2.ZERO
 var _panning := false
 var _last_pan_position := Vector2.ZERO
@@ -42,6 +48,12 @@ func set_plan(value: PCGBuildingPlan) -> void:
 
 func select_footprint(id: StringName) -> void:
 	selected_id = id
+	selected_ids.assign([id] if not id.is_empty() else [])
+	queue_redraw()
+
+func set_selection(ids: Array[StringName], primary: StringName) -> void:
+	selected_ids = ids.duplicate()
+	selected_id = primary
 	queue_redraw()
 
 func set_interaction_mode(mode: int) -> void:
@@ -120,7 +132,7 @@ func _gui_input(event: InputEvent) -> void:
 					InteractionMode.BRIDGE_NODE:
 						_handle_node_click(event.position)
 					_:
-						_handle_footprint_click(event.position)
+						_handle_footprint_click(event.position, event.shift_pressed)
 				_last_pan_position = event.position
 				queue_redraw()
 		else:
@@ -133,6 +145,10 @@ func _gui_input(event: InputEvent) -> void:
 					bridge_node_drag_finished.emit(_drag_bridge)
 					_drag_bridge = &""
 					_drag_node = -1
+				if _drag_building:
+					footprint_move_finished.emit(_drag_id)
+					_drag_building = false
+					_drag_id = &""
 			_panning = false
 		accept_event()
 	elif event is InputEventMouseMotion:
@@ -153,25 +169,36 @@ func _gui_input(event: InputEvent) -> void:
 				snapped.y = bridge.node_positions()[_drag_node].y
 				bridge_node_moved.emit(_drag_bridge, _drag_node, snapped)
 				queue_redraw()
+		elif _drag_building:
+			var world := screen_to_world(event.position)
+			var delta := (world - _last_building_world).snapped(Vector2.ONE * 0.25)
+			if not delta.is_zero_approx():
+				footprint_moved.emit(_drag_id, delta)
+				_last_building_world += delta
+				queue_redraw()
 		elif _panning:
 			_pan_offset += event.position - _last_pan_position
 			_last_pan_position = event.position
 			queue_redraw()
 		accept_event()
 
-func _handle_footprint_click(position: Vector2) -> void:
+func _handle_footprint_click(position: Vector2, additive: bool = false) -> void:
 	var vertex_hit := _pick_vertex(position)
 	if not vertex_hit.is_empty():
 		selected_id = vertex_hit["id"]
 		_drag_id = selected_id
 		_drag_vertex = vertex_hit["index"]
-		footprint_selected.emit(selected_id)
+		footprint_selected.emit(selected_id, false)
 		vertex_drag_started.emit(selected_id)
 	else:
 		var footprint := _pick_footprint(screen_to_world(position))
 		if footprint != null:
 			selected_id = footprint.id
-			footprint_selected.emit(selected_id)
+			_drag_id = selected_id
+			_drag_building = true
+			_last_building_world = screen_to_world(position)
+			footprint_selected.emit(selected_id, additive)
+			footprint_move_started.emit(selected_id)
 		else:
 			_panning = true
 
@@ -263,7 +290,7 @@ func _draw() -> void:
 		var points := PackedVector2Array()
 		for point in polygon:
 			points.append(world_to_screen(point))
-		var selected := footprint.id == selected_id
+		var selected := selected_ids.has(footprint.id)
 		var fill := footprint.wall_color.darkened(0.2 if selected else 0.45)
 		fill.a = 0.9
 		draw_colored_polygon(points, fill)

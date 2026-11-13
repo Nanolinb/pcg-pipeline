@@ -14,6 +14,8 @@ const MeshFactory = preload("res://scripts/building/building_mesh_factory.gd")
 const MERGE_OVERLAP := 0.6
 const CLEARANCE := 0.6
 const SAMPLES_PER_SPAN := 8
+# 与 building_generator.DOORWAY_DEPTH 一致：桥端伸入内凹门洞，顶住洞道背板。
+const RECESS_DEPTH := 0.45
 
 # 依据两个结合点创建默认廊桥（直线路径，中间一个可编辑节点）。
 # 截面尺寸与材质取自廊桥标准组件（component_id）；起止楼层不同即自动生成坡道。
@@ -28,8 +30,8 @@ func make_bridge(plan: PCGBuildingPlan, first: PCGSkybridgeConnector,
 		return {"bridge": null, "errors": errors}
 	var anchor_a: Dictionary = first.anchor(plan.get_footprint(first.building_id))
 	var anchor_b: Dictionary = second.anchor(plan.get_footprint(second.building_id))
-	var pa: Vector3 = anchor_a["position"]
-	var pb: Vector3 = anchor_b["position"]
+	var pa: Vector3 = anchor_a["position"] - anchor_a["outward"] * RECESS_DEPTH
+	var pb: Vector3 = anchor_b["position"] - anchor_b["outward"] * RECESS_DEPTH
 	var bridge := Bridge.new()
 	bridge.id = bridge_id
 	bridge.connector_a = first.id
@@ -39,7 +41,13 @@ func make_bridge(plan: PCGBuildingPlan, first: PCGSkybridgeConnector,
 	var component := bridge_component(bridge, catalog)
 	bridge.width = component.size.x
 	bridge.height = component.size.y
-	bridge.color = component.color
+	# 配色与两端建筑保持一致：取两栋墙色的中间色，顶棚/立柱/扶手由生成器派生同色系深浅。
+	var footprint_a := plan.get_footprint(first.building_id)
+	var footprint_b := plan.get_footprint(second.building_id)
+	if footprint_a != null and footprint_b != null:
+		bridge.color = footprint_a.wall_color.lerp(footprint_b.wall_color, 0.5)
+	else:
+		bridge.color = component.color
 	bridge.nodes = [
 		{"position": pa, "tension": 1.0},
 		{"position": (pa + pb) * 0.5, "tension": 1.0},
@@ -110,7 +118,8 @@ func build_network(plan: PCGBuildingPlan,
 	var triangle_count := 0
 	for bridge in active:
 		var component := bridge_component(bridge, catalog)
-		var mesh := _bridge_mesh(bridge, component)
+		var built := _bridge_mesh(bridge, component)
+		var mesh: ArrayMesh = built["mesh"]
 		var visual := MeshInstance3D.new()
 		visual.name = "Skybridge_%s" % bridge.id
 		visual.mesh = mesh
@@ -118,12 +127,21 @@ func build_network(plan: PCGBuildingPlan,
 		visual.set_meta("bridge_role", "skybridge")
 		visual.set_meta("component_id", component.id)
 		visual.set_meta("component_count", 1)
+		visual.set_meta("post_count", built["post_count"])
+		visual.set_meta("baluster_count", built["baluster_count"])
 		for surface in mesh.get_surface_count():
-			var accent := surface == 1
-			var material_id := component.accent_material_id if accent else component.material_id
-			var surface_color := component.accent_color if accent else bridge.color
+			var material_id := component.material_id
+			var surface_color := bridge.color.darkened(0.05)
+			var roughness := 0.6
+			match surface:
+				1:
+					material_id = component.accent_material_id
+					surface_color = bridge.color.lightened(0.2)
+					roughness = 0.5
+				2:
+					surface_color = bridge.color.darkened(0.28)
 			visual.set_surface_override_material(surface, _material_library().solid(
-				material_id, surface_color, 0.24 if accent else 0.6))
+				material_id, surface_color, roughness))
 		root.add_child(visual)
 		triangle_count += _triangle_count(mesh)
 	var junction_index := 0
@@ -245,18 +263,124 @@ func _path_direction_at(path: PackedVector3Array, near: Vector3) -> Vector3:
 	direction.y = 0.0
 	return direction.normalized() if direction.length() > 0.001 else Vector3.FORWARD
 
-# 沿采样路径扫掠标准组件横截面（桥面、围栏、顶棚立柱、顶棚），逐件封闭，坡道自动跟随切向。
+# 沿采样路径扫掠标准组件横截面（薄桥面、扶手横档、出挑顶棚），
+# 支撑顶棚的立柱按桥长等距独立放置，侧面保持镂空；坡道/弧度自动跟随路径切向。
 func _bridge_mesh(bridge: PCGSkybridgeDefinition,
-			component: PCGBuildingComponentDefinition) -> ArrayMesh:
+			component: PCGBuildingComponentDefinition) -> Dictionary:
 	var groups := MeshFactory.skybridge_part_groups(component)
 	var path := bridge.sampled_path(SAMPLES_PER_SPAN)
 	var frame := _swept_arrays(path, groups["frame"])
+	var post_count := _append_interval_posts(path, groups["post"], frame)
 	var mesh := _mesh(frame[0], frame[1], frame[2], frame[3])
-	if not groups["accent"].is_empty():
-		var accent := _swept_arrays(path, groups["accent"])
-		var accent_mesh := _mesh(accent[0], accent[1], accent[2], accent[3])
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, accent_mesh.surface_get_arrays(0))
-	return mesh
+	var accent := _swept_arrays(path, groups["accent"])
+	var baluster_count := _append_interval_balusters(path, groups["baluster"], accent)
+	var accent_mesh := _mesh(accent[0], accent[1], accent[2], accent[3])
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, accent_mesh.surface_get_arrays(0))
+	var roof := _swept_arrays(path, groups["roof"])
+	var roof_mesh := _mesh(roof[0], roof[1], roof[2], roof[3])
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, roof_mesh.surface_get_arrays(0))
+	return {"mesh": mesh, "post_count": post_count, "baluster_count": baluster_count}
+
+func _path_length(path: PackedVector3Array) -> float:
+	var total := 0.0
+	for index in range(1, path.size()):
+		total += path[index].distance_to(path[index - 1])
+	return total
+
+# 在路径上按弧长等距放置立柱，两端必有一根，数量随桥长增加。
+func _append_interval_posts(path: PackedVector3Array, post_info: Dictionary,
+			arrays: Array) -> int:
+	var total := _path_length(path)
+	var spacing: float = post_info["spacing"]
+	var count := clampi(int(round(total / spacing)) + 1, 2, 64)
+	var size: Vector3 = post_info["size"]
+	var center_y: float = post_info["center_y"]
+	for k in count:
+		var sample := _sample_at_distance(path, total * float(k) / float(count - 1))
+		_append_oriented_box(arrays, sample["right"], sample["up"], sample["forward"],
+			sample["position"] + sample["up"] * center_y, size)
+	return count
+
+# 两侧栏杆立柱按弧长等距布置，间距由组件 baluster.spacing 决定，随桥长自动加密。
+func _append_interval_balusters(path: PackedVector3Array, info: Dictionary,
+			arrays: Array) -> int:
+	var total := _path_length(path)
+	var spacing: float = info["spacing"]
+	var per_edge := clampi(int(round(total / spacing)) + 1, 2, 128)
+	var size: Vector3 = info["size"]
+	var center_y: float = info["center_y"]
+	var lateral: float = info["x"]
+	for edge_sign in [-1.0, 1.0]:
+		for k in per_edge:
+			var sample := _sample_at_distance(path, total * float(k) / float(per_edge - 1))
+			_append_oriented_box(arrays, sample["right"], sample["up"], sample["forward"],
+				sample["position"] + sample["right"] * lateral * edge_sign + sample["up"] * center_y,
+				size)
+	return per_edge * 2
+
+# 按弧长在路径上取样（线性插值），返回位置与局部坐标架。
+func _sample_at_distance(path: PackedVector3Array, distance: float) -> Dictionary:
+	var travelled := 0.0
+	for index in range(1, path.size()):
+		var segment := path[index].distance_to(path[index - 1])
+		if travelled + segment >= distance or index == path.size() - 1:
+			var u := 0.0 if segment <= 0.0001 else clampf((distance - travelled) / segment, 0.0, 1.0)
+			var position := path[index - 1].lerp(path[index], u)
+			var forward := path[index] - path[index - 1]
+			if forward.length() < 0.0001:
+				forward = Vector3.FORWARD
+			forward = forward.normalized()
+			var right := Vector3.UP.cross(forward).normalized()
+			return {
+				"position": position,
+				"forward": forward,
+				"right": right,
+				"up": forward.cross(right).normalized(),
+			}
+		travelled += segment
+	return {"position": path[0], "forward": Vector3.FORWARD,
+		"right": Vector3.RIGHT, "up": Vector3.UP}
+
+# 向扫掠数组追加一个按路径坐标架定向的封闭盒（立柱）。
+func _append_oriented_box(arrays: Array, right: Vector3, up: Vector3, forward: Vector3,
+			center: Vector3, size: Vector3) -> void:
+	var vertices: PackedVector3Array = arrays[0]
+	var normals: PackedVector3Array = arrays[1]
+	var uvs: PackedVector2Array = arrays[2]
+	var indices: PackedInt32Array = arrays[3]
+	var hx := size.x * 0.5
+	var hy := size.y * 0.5
+	var hz := size.z * 0.5
+	var ld := center - right * hx - up * hy
+	var rd := center + right * hx - up * hy
+	var ru := center + right * hx + up * hy
+	var lu := center - right * hx + up * hy
+	var ld_b := ld - forward * hz
+	var rd_b := rd - forward * hz
+	var ru_b := ru - forward * hz
+	var lu_b := lu - forward * hz
+	var ld_f := ld + forward * hz
+	var rd_f := rd + forward * hz
+	var ru_f := ru + forward * hz
+	var lu_f := lu + forward * hz
+	_add_quad(vertices, normals, uvs, indices,
+		[ld_b, ld_f, rd_f, rd_b],
+		[Vector2(0, 0), Vector2(hz * 2, 0), Vector2(hz * 2, size.x), Vector2(0, size.x)])
+	_add_quad(vertices, normals, uvs, indices,
+		[lu_b, ru_b, ru_f, lu_f],
+		[Vector2(0, 0), Vector2(0, size.x), Vector2(hz * 2, size.x), Vector2(hz * 2, 0)])
+	_add_quad(vertices, normals, uvs, indices,
+		[ld_b, lu_b, lu_f, ld_f],
+		[Vector2(0, 0), Vector2(0, size.y), Vector2(hz * 2, size.y), Vector2(hz * 2, 0)])
+	_add_quad(vertices, normals, uvs, indices,
+		[rd_f, ru_f, ru_b, rd_b],
+		[Vector2(hz * 2, 0), Vector2(hz * 2, size.y), Vector2(0, size.y), Vector2(0, 0)])
+	_add_quad(vertices, normals, uvs, indices,
+		[ld_b, rd_b, ru_b, lu_b],
+		[Vector2(0, 0), Vector2(size.x, 0), Vector2(size.x, size.y), Vector2(0, size.y)])
+	_add_quad(vertices, normals, uvs, indices,
+		[ld_f, lu_f, ru_f, rd_f],
+		[Vector2(size.x, 0), Vector2(size.x, size.y), Vector2(0, size.y), Vector2(0, 0)])
 
 func _swept_arrays(path: PackedVector3Array, parts: Array) -> Array:
 	var vertices := PackedVector3Array()

@@ -41,7 +41,7 @@ func anchor(footprint: PCGBuildingFootprint) -> Dictionary:
 	var outward := Vector3(edge.y, 0.0, -edge.x).normalized()
 	var point := a.lerp(b, clampf(edge_t, 0.0, 1.0))
 	return {
-		"position": Vector3(point.x, float(floor) * footprint.floor_height, point.y),
+		"position": Vector3(point.x, footprint.ground_elevation + float(floor) * footprint.floor_height, point.y),
 		"outward": outward,
 		"edge_length": maxf(edge.length(), 0.001),
 	}

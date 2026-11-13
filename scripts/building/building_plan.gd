@@ -3,6 +3,7 @@ class_name PCGBuildingPlan
 extends Resource
 
 @export var master_seed: String = "fantasy-city-v1"
+@export var terrain_slope := Vector2.ZERO
 @export var footprints: Array[PCGBuildingFootprint] = []
 @export var connectors: Array[PCGSkybridgeConnector] = []
 @export var skybridges: Array[PCGSkybridgeDefinition] = []
@@ -79,6 +80,9 @@ func skybridges_for_building(id: StringName) -> Array[PCGSkybridgeDefinition]:
 			result.append(bridge)
 	return result
 
+func terrain_height_at(point: Vector2) -> float:
+	return terrain_slope.dot(point)
+
 func semantic_data() -> Dictionary:
 	var items: Array = []
 	for footprint in footprints:
@@ -94,6 +98,7 @@ func semantic_data() -> Dictionary:
 			bridge_items.append(bridge.semantic_data())
 	return {
 		"master_seed": master_seed,
+		"terrain_slope": [terrain_slope.x, terrain_slope.y],
 		"footprints": items,
 		"connectors": connector_items,
 		"skybridges": bridge_items,

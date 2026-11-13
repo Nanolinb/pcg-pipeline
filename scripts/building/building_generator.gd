@@ -5,6 +5,8 @@ extends RefCounted
 const Definition = preload("res://scripts/building/building_component_definition.gd")
 const MeshFactory = preload("res://scripts/building/building_mesh_factory.gd")
 
+var _current_base_elevation: float = 0.0
+
 func build_plan(plan: PCGBuildingPlan, catalog: PCGBuildingComponentCatalog) -> Dictionary:
 	var errors := plan.validation_errors()
 	for footprint in plan.footprints:
@@ -18,7 +20,7 @@ func build_plan(plan: PCGBuildingPlan, catalog: PCGBuildingComponentCatalog) -> 
 	var component_count := 0
 	var triangle_count := 0
 	for footprint in plan.footprints:
-		var result := build_building(footprint, plan.master_seed, catalog, plan.footprints)
+		var result := build_building(footprint, plan.master_seed, catalog, plan.footprints, [], plan)
 		if not result["errors"].is_empty():
 			root.free()
 			return {"root": null, "errors": result["errors"], "buildings": [], "stats": {}}
@@ -41,19 +43,30 @@ func build_plan(plan: PCGBuildingPlan, catalog: PCGBuildingComponentCatalog) -> 
 
 func build_building(footprint: PCGBuildingFootprint, master_seed: String,
 			catalog: PCGBuildingComponentCatalog, obstacles: Array = [],
-			facade_exclusions: Array = []) -> Dictionary:
+			facade_exclusions: Array = [], terrain: PCGBuildingPlan = null,
+			connectors: Array = []) -> Dictionary:
 	var errors := footprint.validation_errors()
 	errors.append_array(catalog.binding_errors(footprint))
 	if not errors.is_empty():
 		return {"root": null, "errors": errors}
 	var polygon := footprint.normalized_polygon()
 	var height := footprint.height()
+	_current_base_elevation = _base_elevation(polygon, terrain)
+	footprint.ground_elevation = _current_base_elevation
 	var root := Node3D.new()
 	root.name = "Building_%s" % footprint.id
+	root.position.y = _current_base_elevation
 	root.set_meta("footprint_id", footprint.id)
+	root.set_meta("base_elevation", _current_base_elevation)
+	if terrain != null and not terrain.terrain_slope.is_zero_approx():
+		var foundation := MeshInstance3D.new()
+		foundation.name = "SlopeFoundation"
+		foundation.mesh = MeshFactory.foundation(polygon, terrain, _current_base_elevation)
+		foundation.material_override = _material_library().solid(&"building/foundation", Color("675f52"), 0.94)
+		root.add_child(foundation)
 	var body := MeshInstance3D.new()
 	body.name = "DerivedSolid"
-	body.mesh = MeshFactory.extrude(polygon, height)
+	body.mesh = MeshFactory.extrude(polygon, height, _facade_openings(footprint, polygon, height, connectors))
 	body.material_override = _material_library().solid(
 		footprint.wall_material_id, footprint.wall_color, 0.88, 0.0, &"preserve", 1.0
 	)
@@ -149,22 +162,76 @@ func build_building(footprint: PCGBuildingFootprint, master_seed: String,
 						var drying_y := center_y - window.size.y * scale_factor * 0.25
 						count += _add_decoration(components, drying, _facade_transform(a, b, t, drying_y),
 							Vector3.ONE, footprint.id, polygon, edge_index, t, obstacles, occupied, slot_id, diagnostics)
+	# 连廊结合点：门洞裁切由主体挤出完成，这里补门套组件作为洞口边框。
+	for connector in connectors:
+		if connector == null:
+			continue
+		var opening := _connector_opening(connector, footprint, polygon, height)
+		if opening.is_empty():
+			continue
+		var edge_a: Vector2 = polygon[opening["edge_index"]]
+		var edge_b: Vector2 = polygon[(opening["edge_index"] + 1) % polygon.size()]
+		var frame_scale := Vector3(
+			(opening["s1"] - opening["s0"]) / maxf(door.size.x, 0.01),
+			(opening["y1"] - opening["y0"]) / maxf(door.size.y, 0.01), 1.0)
+		count += _add_component(components, door,
+			_facade_transform(edge_a, edge_b, connector.edge_t, (opening["y0"] + opening["y1"]) * 0.5),
+			frame_scale, footprint.id)
 	var roof_point := _roof_anchor(polygon)
-	count += _add_component(components, roof,
-		Transform3D(Basis.IDENTITY, Vector3(roof_point.x, height + roof.size.y * 0.5, roof_point.y)),
-		Vector3.ONE, footprint.id)
-	var drying_point := roof_point + Vector2(-0.9, 0.75)
-	if Geometry2D.is_point_in_polygon(drying_point, polygon):
-		count += _add_component(components, roof_drying,
-			Transform3D(Basis.IDENTITY, Vector3(drying_point.x, height + roof_drying.size.y * 0.5 + 0.06, drying_point.y)),
-			Vector3.ONE, footprint.id)
+	var roof_transform := Transform3D(Basis.IDENTITY, Vector3(roof_point.x, height + roof.size.y * 0.5, roof_point.y))
+	count += _add_component(components, roof, roof_transform, Vector3.ONE, footprint.id)
+	occupied.append({"bounds": _component_bounds(roof, roof_transform, Vector3.ONE), "host_id": &"roof_hatch"})
+	var drying_transform := _roof_drying_transform(polygon, roof_drying, parapet, roof_point, height, occupied)
+	if not drying_transform.is_empty():
+		count += _add_component(components, roof_drying, drying_transform["transform"], Vector3.ONE, footprint.id)
+	else:
+		diagnostics["rejected"] += 1
 	root.set_meta("component_count", count)
 	root.set_meta("triangle_count", _triangle_count(body.mesh) + _component_triangles(components))
-	root.set_meta("semantic_digest", PCGCanonicalSerializer.hash_document(footprint.semantic_data()))
+	root.set_meta("semantic_digest", PCGCanonicalSerializer.hash_document({
+		"building": footprint.semantic_data(),
+		"terrain": [terrain.terrain_slope.x, terrain.terrain_slope.y] if terrain != null else [0.0, 0.0],
+	}))
 	root.set_meta("rejected_decorations", diagnostics["rejected"])
 	return {"root": root, "errors": PackedStringArray()}
 
 # 结合点在立面上占用的边内区间；exclusions 元素为 connector.exclusion() 的结果。
+const DOORWAY_DEPTH := 0.45
+const DOORWAY_MARGIN := 0.15
+
+# 结合点 → 主体挤出的门洞参数（内凹洞道，裁切楼面主体）。
+func _facade_openings(footprint: PCGBuildingFootprint, polygon: PackedVector2Array,
+			height: float, connectors: Array) -> Array:
+	var result: Array = []
+	for connector in connectors:
+		var opening := _connector_opening(connector, footprint, polygon, height)
+		if not opening.is_empty():
+			result.append(opening)
+	return result
+
+func _connector_opening(connector, footprint: PCGBuildingFootprint,
+			polygon: PackedVector2Array, height: float) -> Dictionary:
+	if connector == null or polygon.size() < 3:
+		return {}
+	var index := clampi(connector.edge_index, 0, polygon.size() - 1)
+	var a: Vector2 = polygon[index]
+	var b: Vector2 = polygon[(index + 1) % polygon.size()]
+	var length := maxf(a.distance_to(b), 0.001)
+	var y0 := clampf(float(connector.floor) * footprint.floor_height, 0.0, height)
+	var y1 := clampf(y0 + float(connector.height), 0.0, height)
+	var half := minf(float(connector.width) * 0.5 + DOORWAY_MARGIN, length * 0.5 - 0.05)
+	if y1 - y0 < 0.3 or half <= 0.05:
+		return {}
+	var center := clampf(float(connector.edge_t), 0.0, 1.0) * length
+	return {
+		"edge_index": index,
+		"s0": maxf(center - half, 0.0),
+		"s1": minf(center + half, length),
+		"y0": y0,
+		"y1": y1,
+		"depth": DOORWAY_DEPTH,
+	}
+
 func _blocked_intervals(exclusions: Array, edge_index: int, edge_length: float) -> Array:
 	var cuts: Array = []
 	for exclusion in exclusions:
@@ -303,13 +370,14 @@ func _component_bounds(definition: PCGBuildingComponentDefinition,
 					first = false
 				else:
 					result = result.expand(point)
+	result.position.y += _current_base_elevation
 	return result
 
 func _hits_obstacles(bounds: AABB, building_id: StringName, obstacles: Array) -> bool:
 	for obstacle in obstacles:
 		if obstacle == null or obstacle.id == building_id:
 			continue
-		if bounds.position.y > obstacle.height() or bounds.end.y < 0.0:
+		if bounds.position.y > obstacle.ground_elevation + obstacle.height() or bounds.end.y < obstacle.ground_elevation:
 			continue
 		var rect := PackedVector2Array([
 			Vector2(bounds.position.x, bounds.position.z), Vector2(bounds.end.x, bounds.position.z),
@@ -345,6 +413,71 @@ func _facade_transform(a: Vector2, b: Vector2, t: float, y: float) -> Transform3
 	var right := Vector3.UP.cross(outward).normalized()
 	var point := a.lerp(b, t)
 	return Transform3D(Basis(right, Vector3.UP, outward), Vector3(point.x, y, point.y) + outward * 0.025)
+
+func _base_elevation(polygon: PackedVector2Array, terrain: PCGBuildingPlan) -> float:
+	if terrain == null or terrain.terrain_slope.is_zero_approx():
+		return 0.0
+	var highest := -INF
+	for point in polygon:
+		highest = maxf(highest, terrain.terrain_height_at(point))
+	return highest + 0.04
+
+func _roof_drying_transform(polygon: PackedVector2Array, definition: PCGBuildingComponentDefinition,
+			parapet: PCGBuildingComponentDefinition, roof_point: Vector2, height: float,
+			occupied: Array[Dictionary]) -> Dictionary:
+	var usable_parts := Geometry2D.offset_polygon(polygon, -(parapet.size.z * 0.5 + 0.12), Geometry2D.JOIN_MITER)
+	if usable_parts.is_empty():
+		return {}
+	var best := Transform3D()
+	var best_score := -INF
+	for rotation in [0.0, PI * 0.5]:
+		var basis := Basis(Vector3.UP, rotation)
+		var local_bounds := _component_bounds(definition, Transform3D(basis, Vector3.ZERO), Vector3.ONE)
+		for usable in usable_parts:
+			var bounds := Rect2(usable[0], Vector2.ZERO)
+			for point in usable:
+				bounds = bounds.expand(point)
+			var candidates: Array[Vector2] = [_roof_anchor(usable), roof_point]
+			var steps := Vector2(0.45, 0.45)
+			var count_x := int(ceil(bounds.size.x / steps.x))
+			var count_y := int(ceil(bounds.size.y / steps.y))
+			for ix in count_x + 1:
+				for iy in count_y + 1:
+					candidates.append(bounds.position + Vector2(minf(ix * steps.x, bounds.size.x), minf(iy * steps.y, bounds.size.y)))
+			for point in candidates:
+				var rect := PackedVector2Array([
+					point + Vector2(local_bounds.position.x, local_bounds.position.z),
+					point + Vector2(local_bounds.end.x, local_bounds.position.z),
+					point + Vector2(local_bounds.end.x, local_bounds.end.z),
+					point + Vector2(local_bounds.position.x, local_bounds.end.z),
+				])
+				if not _rect_inside_polygon(rect, usable):
+					continue
+				var transform := Transform3D(basis, Vector3(point.x, height + definition.size.y * 0.5 + 0.06, point.y))
+				var component_bounds := _component_bounds(definition, transform, Vector3.ONE)
+				var conflict := false
+				for record in occupied:
+					if component_bounds.grow(0.04).intersects(record["bounds"]):
+						conflict = true
+						break
+				if conflict:
+					continue
+				var score := point.distance_squared_to(roof_point)
+				if score > best_score:
+					best_score = score
+					best = transform
+	if best_score == -INF:
+		return {}
+	return {"transform": best}
+
+func _rect_inside_polygon(rect: PackedVector2Array, polygon: PackedVector2Array) -> bool:
+	var rect_area := absf(PCGBuildingFootprint.signed_area(rect))
+	if rect_area <= 0.001:
+		return false
+	var covered := 0.0
+	for part in Geometry2D.intersect_polygons(rect, polygon):
+		covered += absf(PCGBuildingFootprint.signed_area(part))
+	return covered >= rect_area - 0.002
 
 func _roof_anchor(polygon: PackedVector2Array) -> Vector2:
 	var center := Vector2.ZERO

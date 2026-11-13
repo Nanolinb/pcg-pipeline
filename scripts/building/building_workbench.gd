@@ -8,14 +8,30 @@ const PlanEditor = preload("res://scripts/building/building_plan_editor.gd")
 const Connector = preload("res://scripts/building/skybridge_connector.gd")
 const SkybridgeGen = preload("res://scripts/building/skybridge_generator.gd")
 
+class FitIconButton extends Button:
+	func _draw() -> void:
+		var center := size * 0.5
+		var color := get_theme_color("font_color")
+		for sx in [-1.0, 1.0]:
+			for sy in [-1.0, 1.0]:
+				var start := center + Vector2(sx, sy) * 9.0
+				var direction := -Vector2(sx, sy).normalized()
+				var tip := start + direction * 6.0
+				var side := Vector2(-direction.y, direction.x) * 2.2
+				draw_line(start, tip, color, 1.5, true)
+				draw_line(tip, tip - direction * 3.0 + side, color, 1.5, true)
+				draw_line(tip, tip - direction * 3.0 - side, color, 1.5, true)
+
 var plan: PCGBuildingPlan
 var catalog := PCGBuildingComponentCatalog.new()
 var generator := PCGBuildingGenerator.new()
 var skybridge_generator := SkybridgeGen.new()
 var building_root: Node3D
+var ground: MeshInstance3D
 var skybridge_root: Node3D
 var building_nodes: Dictionary = {}
 var selected_id: StringName = &""
+var selected_ids: Array[StringName] = []
 var selected_bridge_id: StringName = &""
 var selected_node_index: int = -1
 var camera: Camera3D
@@ -29,6 +45,7 @@ var plan_editor: PCGBuildingPlanEditor
 var detail_window: Window
 var detail_plan_editor: PCGBuildingPlanEditor
 var detail_zoom_label: Label
+var fusion_button: Button
 var status_label: Label
 var stats_label: Label
 var selected_label: Label
@@ -55,6 +72,7 @@ func _ready() -> void:
 	building_root.name = "Buildings"
 	add_child(building_root)
 	_build_ui()
+	_update_terrain()
 	_sync_plan()
 	if not plan.footprints.is_empty():
 		_select_footprint(plan.footprints[0].id)
@@ -101,7 +119,7 @@ func _build_environment() -> void:
 	fill.light_color = Color("8bbce0")
 	fill.light_energy = 0.3
 	add_child(fill)
-	var ground := MeshInstance3D.new()
+	ground = MeshInstance3D.new()
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(30.0, 0.2, 30.0)
 	ground.mesh = mesh
@@ -157,22 +175,21 @@ func _build_ui() -> void:
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	left.add_theme_constant_override("separation", 9)
 	left_scroll.add_child(left)
-	_add_heading(left, "可编辑平面图")
+	_add_heading(left, "建筑主体编辑")
 	plan_editor = _make_plan_editor()
 	left.add_child(plan_editor)
+	_install_view_controls(plan_editor)
 	_add_hint(left, "滚轮缩放；拖动空白、右键或中键平移。\n坐标吸附到 0.25 m 网格。")
-	var view_row := HBoxContainer.new()
-	left.add_child(view_row)
-	_view_button(view_row, "缩小", func(): plan_editor.zoom_at(plan_editor.size * 0.5, 1.0 / 1.2))
-	_view_button(view_row, "放大", func(): plan_editor.zoom_at(plan_editor.size * 0.5, 1.2))
-	_view_button(view_row, "适配", plan_editor.fit_to_content)
 	_button(left, "打开独立细节窗口", _open_detail_window)
 	_button(left, "新增面岛 / 建筑", _add_footprint)
 	_button(left, "循环切分选中面岛", _split_selected)
+	fusion_button = _button(left, "融合选中建筑", _fuse_selected)
+	fusion_button.disabled = true
 	_button(left, "删除选中面岛", _delete_selected)
-	_add_heading(left, "廊桥")
-	_button(left, "模式：平面编辑", func(): _set_editor_mode(PCGBuildingPlanEditor.InteractionMode.FOOTPRINT,
-		"平面编辑模式：单击选择建筑，拖动顶点改变轮廓。"))
+	_add_hint(left, "Shift+单击可多选建筑；至少两栋轮廓相交/相接时才能融合。")
+	_add_heading(left, "廊桥编辑")
+	_button(left, "模式：建筑主体平面编辑", func(): _set_editor_mode(PCGBuildingPlanEditor.InteractionMode.FOOTPRINT,
+		"建筑主体平面编辑模式：拖动整栋或顶点；Shift+单击多选。"))
 	_button(left, "模式：标注结合点", func(): _set_editor_mode(PCGBuildingPlanEditor.InteractionMode.CONNECTOR,
 		"结合点模式：点击建筑立面边缘放置廊桥结合点，楼层取下方“结合点楼层”。"))
 	_button(left, "模式：桥节点编辑", func(): _set_editor_mode(PCGBuildingPlanEditor.InteractionMode.BRIDGE_NODE,
@@ -234,6 +251,7 @@ func _build_ui() -> void:
 	stats_label.add_theme_color_override("font_color", Color("a9c6ce"))
 	right.add_child(stats_label)
 	_add_heading(right, "操作")
+	_button(right, "切换斜坡演示", _toggle_terrain)
 	_button(right, "修复选中建筑", _repair_selected)
 	_button(right, "撤销 / 重做", func(): status_label.text = "快捷键：⌘/Ctrl+Z 撤销，Shift+⌘/Ctrl+Z 重做。")
 	_button(right, "重置视角 (F)", _reset_camera)
@@ -245,6 +263,9 @@ func _make_plan_editor() -> PCGBuildingPlanEditor:
 	editor.footprint_selected.connect(_select_footprint)
 	editor.vertex_drag_started.connect(_on_vertex_drag_started)
 	editor.footprint_edited.connect(_on_plan_edited)
+	editor.footprint_move_started.connect(_on_building_move_started)
+	editor.footprint_moved.connect(_on_building_moved)
+	editor.footprint_move_finished.connect(_on_building_move_finished)
 	editor.vertex_drag_finished.connect(_on_vertex_drag_finished)
 	editor.connector_placed.connect(_on_connector_placed)
 	editor.bridge_node_selected.connect(_on_bridge_node_selected)
@@ -252,6 +273,27 @@ func _make_plan_editor() -> PCGBuildingPlanEditor:
 	editor.bridge_node_drag_finished.connect(_on_bridge_node_drag_finished)
 	editor.zoom_changed.connect(_on_detail_zoom_changed)
 	return editor
+
+func _install_view_controls(editor: PCGBuildingPlanEditor) -> void:
+	var controls := HBoxContainer.new()
+	controls.add_theme_constant_override("separation", 3)
+	controls.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	controls.offset_left = -112.0
+	controls.offset_top = 8.0
+	controls.offset_right = -8.0
+	controls.offset_bottom = 40.0
+	controls.z_index = 20
+	editor.add_child(controls)
+	_view_button(controls, "−", func(): editor.zoom_at(editor.size * 0.5, 1.0 / 1.2))
+	_view_button(controls, "+", func(): editor.zoom_at(editor.size * 0.5, 1.2))
+	controls.get_child(0).tooltip_text = "缩小视图"
+	controls.get_child(1).tooltip_text = "放大视图"
+	var fit := FitIconButton.new()
+	fit.custom_minimum_size = Vector2(32.0, 30.0)
+	fit.focus_mode = Control.FOCUS_NONE
+	fit.tooltip_text = "适配全部建筑、结合点与廊桥"
+	fit.pressed.connect(editor.fit_to_content)
+	controls.add_child(fit)
 
 func _view_button(parent: HBoxContainer, text: String, callback: Callable) -> void:
 	var button := Button.new()
@@ -281,22 +323,18 @@ func _open_detail_window() -> void:
 		var content := VBoxContainer.new()
 		content.add_theme_constant_override("separation", 10)
 		margin.add_child(content)
-		var toolbar := HBoxContainer.new()
-		content.add_child(toolbar)
-		_view_button(toolbar, "缩小", func(): detail_plan_editor.zoom_at(detail_plan_editor.size * 0.5, 1.0 / 1.2))
-		_view_button(toolbar, "放大", func(): detail_plan_editor.zoom_at(detail_plan_editor.size * 0.5, 1.2))
-		_view_button(toolbar, "适配全部", func(): detail_plan_editor.fit_to_content())
 		detail_zoom_label = Label.new()
 		detail_zoom_label.add_theme_color_override("font_color", Color("9fc4ce"))
 		content.add_child(detail_zoom_label)
 		detail_plan_editor = _make_plan_editor()
 		detail_plan_editor.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		content.add_child(detail_plan_editor)
+		_install_view_controls(detail_plan_editor)
 		var hint := Label.new()
 		hint.text = "滚轮以光标为中心缩放；拖动空白、右键或中键平移。与原顶视图共享编辑数据。"
 		content.add_child(hint)
 	detail_plan_editor.set_plan(plan)
-	detail_plan_editor.select_footprint(selected_id)
+	detail_plan_editor.set_selection(selected_ids, selected_id)
 	detail_plan_editor.set_interaction_mode(plan_editor.interaction_mode)
 	detail_plan_editor.selected_bridge_id = plan_editor.selected_bridge_id
 	detail_plan_editor.selected_node_index = plan_editor.selected_node_index
@@ -355,7 +393,10 @@ func _sync_plan() -> bool:
 	var valid: Dictionary = {}
 	for footprint in plan.footprints:
 		valid[footprint.id] = true
-		var signature := PCGCanonicalSerializer.hash_document(footprint.semantic_data())
+		var signature := PCGCanonicalSerializer.hash_document({
+			"building": footprint.semantic_data(),
+			"terrain": [plan.terrain_slope.x, plan.terrain_slope.y],
+		})
 		if not building_nodes.has(footprint.id):
 			_rebuild_building(footprint.id)
 		elif building_nodes[footprint.id].get_meta("semantic_digest", "") != signature:
@@ -371,6 +412,7 @@ func _sync_plan() -> bool:
 	if detail_plan_editor != null:
 		detail_plan_editor.set_plan(plan)
 	_update_stats()
+	_update_fusion_button()
 	return true
 
 func _rebuild_building(id: StringName) -> bool:
@@ -381,7 +423,7 @@ func _rebuild_building(id: StringName) -> bool:
 	for connector in plan.connectors_for_building(id):
 		exclusions.append(connector.exclusion(footprint))
 	var result := generator.build_building(footprint, plan.master_seed, catalog,
-		plan.footprints, exclusions)
+		plan.footprints, exclusions, plan, plan.connectors_for_building(id))
 	if not result["errors"].is_empty():
 		status_label.text = "保留上一份有效网格：%s" % "; ".join(result["errors"])
 		return false
@@ -605,12 +647,21 @@ func _repair_selected() -> void:
 		var rejected := int(building.get_meta("rejected_decorations", 0))
 		status_label.text = "已修复选中建筑：重排门窗并避开占用冲突；阻止 %d 处立面组件放置。" % rejected
 
-func _select_footprint(id: StringName) -> void:
-	selected_id = id
-	plan_editor.select_footprint(id)
+func _select_footprint(id: StringName, additive: bool = false) -> void:
+	if additive:
+		if selected_ids.has(id):
+			selected_ids.erase(id)
+		else:
+			selected_ids.append(id)
+		selected_id = id if selected_ids.has(id) else (selected_ids[-1] if not selected_ids.is_empty() else &"")
+	else:
+		selected_ids.assign([id] if not id.is_empty() else [])
+		selected_id = id
+	plan_editor.set_selection(selected_ids, selected_id)
 	if detail_plan_editor != null:
-		detail_plan_editor.select_footprint(id)
+		detail_plan_editor.set_selection(selected_ids, selected_id)
 	_update_inspector()
+	_update_fusion_button()
 
 func _update_inspector() -> void:
 	var footprint := plan.get_footprint(selected_id)
@@ -659,6 +710,27 @@ func _mesh_triangles(mesh: Mesh) -> int:
 		count += int(indices.size() / 3) if indices != null else 0
 	return count
 
+func _on_building_move_started(id: StringName) -> void:
+	if not plan_editor.selected_ids.has(id):
+		_select_footprint(id)
+	_drag_before = _footprint_snapshot(plan.get_footprint(id))
+
+func _on_building_moved(id: StringName, delta: Vector2) -> void:
+	var footprint := plan.get_footprint(id)
+	if footprint == null:
+		return
+	var polygon := footprint.polygon.duplicate()
+	for index in polygon.size():
+		polygon[index] += delta
+	footprint.polygon = polygon
+	_sync_plan()
+	status_label.text = "建筑已平移 %.2f, %.2f m；主体与连接关系已同步。" % [delta.x, delta.y]
+
+func _on_building_move_finished(id: StringName) -> void:
+	var after := _footprint_snapshot(plan.get_footprint(id))
+	_register_footprint_action("平移建筑", id, _drag_before, after)
+	_drag_before = {}
+
 func _on_vertex_drag_started(id: StringName) -> void:
 	_select_footprint(id)
 	_drag_before = _footprint_snapshot(plan.get_footprint(id))
@@ -702,21 +774,149 @@ func _add_footprint() -> void:
 	while plan.get_footprint(footprint.id) != null:
 		index += 1
 		footprint.id = &"house_%d" % index
-	var bounds := _plan_bounds()
-	var x := bounds.end.x + 1.2 if bounds.has_area() else 0.0
-	footprint.polygon = PackedVector2Array([
-		Vector2(x, -1.2), Vector2(x + 2.4, -1.2),
-		Vector2(x + 2.4, 1.2), Vector2(x, 1.2),
-	])
-	footprint.seed = index
-	footprint.wall_color = Color("c39a78")
-	footprint.wall_material_id = &"building/wall/new_%d" % index
+	var random := PCGDeterministicRng.create_stream(plan.master_seed, {
+		"building": footprint.id, "purpose": &"layout",
+	})
+	footprint.polygon = _density_aware_shape(random, footprint.id)
+	footprint.floors = random.randi_range(2, 6)
+	footprint.seed = random.randi_range(0, 9999)
+	var palette: Array[Color] = [Color("c39a78"), Color("a8b1a0"), Color("b98065"), Color("b7a48b"), Color("91a7ad")]
+	footprint.wall_color = palette[random.pick_index(palette.size())]
+	footprint.wall_material_id = &"building/wall/%s" % footprint.id
 	plan.footprints.append(footprint)
 	selected_id = footprint.id
 	_sync_plan()
 	_select_footprint(selected_id)
-	_register_plan_action("新增面岛", before, _plan_snapshot())
-	status_label.text = "已新增独立面岛；默认组件规则已自动应用。"
+	_register_plan_action("新增建筑", before, _plan_snapshot())
+	status_label.text = "已在低密度区域新增 %s：%d 层；位置、轮廓和参数可复现。" % [footprint.id, footprint.floors]
+
+func _density_aware_shape(random: PCGRandomStream, id: StringName) -> PackedVector2Array:
+	var width := random.randf_range(1.8, 3.4)
+	var depth := random.randf_range(1.6, 3.2)
+	var shape := PackedVector2Array()
+	if random.randf() < 0.28:
+		shape = PackedVector2Array([
+			Vector2(-width * 0.5, -depth * 0.5), Vector2(width * 0.5, -depth * 0.5),
+			Vector2(width * 0.5, -depth * 0.1), Vector2(width * 0.1, -depth * 0.1),
+			Vector2(width * 0.1, depth * 0.5), Vector2(-width * 0.5, depth * 0.5),
+		])
+	else:
+		shape = PackedVector2Array([
+			Vector2(-width * 0.5, -depth * 0.5), Vector2(width * 0.5, -depth * 0.5),
+			Vector2(width * 0.5, depth * 0.5), Vector2(-width * 0.5, depth * 0.5),
+		])
+	var rotation := random.randf_range(-0.22, 0.22)
+	for index in shape.size():
+		shape[index] = shape[index].rotated(rotation)
+	if plan.footprints.is_empty():
+		return shape
+	var bounds := _plan_bounds()
+	var area := Rect2(bounds.position - Vector2(3.0, 3.0), bounds.size + Vector2(6.0, 6.0))
+	var center := bounds.get_center()
+	var best := Vector2(bounds.end.x + 2.0, center.y)
+	var best_score := INF
+	for candidate_index in 32:
+		var point := Vector2(
+			random.randf_range(area.position.x, area.end.x),
+			random.randf_range(area.position.y, area.end.y)
+		)
+		if _shape_overlaps(shape, point):
+			continue
+		var score := _density_at(point) + point.distance_to(center) * 0.025 + random.randf() * 0.08
+		if score < best_score:
+			best_score = score
+			best = point
+	return _translated_shape(shape, best)
+
+func _density_at(point: Vector2) -> float:
+	var density := 0.0
+	for footprint in plan.footprints:
+		if footprint == null:
+			continue
+		var polygon := footprint.normalized_polygon()
+		var area := absf(Footprint.signed_area(polygon))
+		var center := _polygon_bounds(polygon).get_center()
+		var radius := 3.0 + sqrt(area) * 0.5
+		var distance_sq := point.distance_squared_to(center)
+		density += area * exp(-distance_sq / (2.0 * radius * radius))
+	return density
+
+func _shape_overlaps(shape: PackedVector2Array, point: Vector2) -> bool:
+	var candidate := _translated_shape(shape, point)
+	for footprint in plan.footprints:
+		if footprint == null:
+			continue
+		for part in Geometry2D.intersect_polygons(candidate, footprint.normalized_polygon()):
+			if absf(Footprint.signed_area(part)) > 0.001:
+				return true
+	return false
+
+func _translated_shape(shape: PackedVector2Array, offset: Vector2) -> PackedVector2Array:
+	var result := PackedVector2Array()
+	for point in shape:
+		result.append(point + offset)
+	return result
+
+func _fuse_selected() -> void:
+	if selected_ids.size() < 2:
+		status_label.text = "请先按住 Shift 选择至少两栋建筑。"
+		return
+	if not _can_fuse_selection():
+		status_label.text = "选中的建筑必须轮廓相交或相接，才能融合。"
+		return
+	var targets: Array[PCGBuildingFootprint] = []
+	for id in selected_ids:
+		var item := plan.get_footprint(id)
+		if item == null:
+			return
+		if not plan.connectors_for_building(id).is_empty():
+			status_label.text = "%s 仍有廊桥结合点；请先移除连接，再融合。" % id
+			return
+		targets.append(item)
+	var footprint := plan.get_footprint(selected_id)
+	var merged := footprint.normalized_polygon()
+	var removed: Array[StringName] = []
+	for other in targets:
+		if other.id == footprint.id:
+			continue
+		merged = Geometry2D.merge_polygons(merged, other.normalized_polygon())[0]
+		footprint.floors = maxi(footprint.floors, other.floors)
+		removed.append(other.id)
+	var before := _plan_snapshot()
+	footprint.polygon = merged
+	for other in targets:
+		if other.id != footprint.id:
+			plan.footprints.erase(other)
+	selected_ids.assign([footprint.id])
+	_sync_plan()
+	_select_footprint(footprint.id)
+	_register_plan_action("融合选中建筑", before, _plan_snapshot())
+	status_label.text = "已融合 %d 栋建筑到 %s；可继续平移、切分或撤销。" % [removed.size() + 1, footprint.id]
+
+func _can_fuse_selection() -> bool:
+	if selected_ids.size() < 2:
+		return false
+	var primary := plan.get_footprint(selected_id)
+	if primary == null:
+		return false
+	var merged := primary.normalized_polygon()
+	for id in selected_ids:
+		if id == selected_id:
+			continue
+		var other := plan.get_footprint(id)
+		if other == null:
+			return false
+		var parts := Geometry2D.merge_polygons(merged, other.normalized_polygon())
+		if parts.size() != 1:
+			return false
+		merged = parts[0]
+	return true
+
+func _update_fusion_button() -> void:
+	if fusion_button == null:
+		return
+	fusion_button.disabled = not _can_fuse_selection()
+	fusion_button.tooltip_text = "选择至少两栋相交或相接的建筑后可用。" if fusion_button.disabled else "融合当前选中的建筑，可撤销。"
 
 func _split_selected() -> void:
 	var footprint := plan.get_footprint(selected_id)
@@ -967,6 +1167,27 @@ func _update_camera() -> void:
 	) * camera_distance
 	camera.position = camera_target + offset
 	camera.look_at(camera_target, Vector3.UP)
+
+func _toggle_terrain() -> void:
+	var before := plan.terrain_slope
+	var after := Vector2.ZERO if not before.is_zero_approx() else Vector2(0.14, 0.08)
+	_set_terrain_slope(after)
+	undo_redo.create_action("切换斜坡地形")
+	undo_redo.add_do_method(_set_terrain_slope.bind(after))
+	undo_redo.add_undo_method(_set_terrain_slope.bind(before))
+	undo_redo.commit_action(false)
+	status_label.text = "已切换为水平地面。" if after.is_zero_approx() else "斜坡演示：移动建筑会自动更新标高、基础和廊桥连接。"
+
+func _set_terrain_slope(value: Vector2) -> void:
+	plan.terrain_slope = value
+	_update_terrain()
+	_sync_plan()
+
+func _update_terrain() -> void:
+	if ground == null:
+		return
+	var normal := Vector3(-plan.terrain_slope.x, 1.0, -plan.terrain_slope.y).normalized()
+	ground.quaternion = Quaternion(Vector3.UP, normal)
 
 func _reset_camera() -> void:
 	camera_target = Vector3(0.8, 3.8, 1.0)
