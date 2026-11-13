@@ -1,8 +1,8 @@
 @tool
 class_name PCGStandardAssetStore
-extends RefCounted
+extends PCGJsonDocumentStore
 
-# v0.16 L1 标准资产发布：PCGAtomicStore + JSON 信封 + 每级网格 .res。
+# v0.16 L1 标准资产发布：PCGJsonDocumentStore 骨架 + JSON 信封 + 每级网格 .res。
 # 默认目录 res://assets/published，可被调用方覆盖（例如 user:// 测试目录）。
 #
 # 发布纪律：
@@ -24,23 +24,12 @@ const APP_VERSION := "0.16.0"
 const MESH_SLOTS: Array[String] = ["lod0", "lod1", "lod2", "whitebox"]
 const LOD_LEVELS: Array[int] = [1, 2]
 
-var directory: String = DEFAULT_DIRECTORY
-var atomic_store: PCGAtomicStore = PCGAtomicStore.new()
-## 最近一次 list_assets 的逐文件报告（含坏文件与重复 ID 说明）。
-var last_report: Array[String] = []
 ## 最近一次 publish 的 LOD 生成明细（调试/审计用）。
 var last_publish_manifest: Dictionary = {}
 
 
-func _init() -> void:
-	atomic_store.content_validator = func(content: String) -> Array[String]:
-		var problems: Array[String] = []
-		var json := JSON.new()
-		if json.parse(content) != OK or not (json.data is Dictionary):
-			problems.append("document is not a valid JSON object")
-		elif not (json.data as Dictionary).has("format_version"):
-			problems.append("document has no format_version")
-		return problems
+func default_directory() -> String:
+	return DEFAULT_DIRECTORY
 
 
 func asset_path(asset_id: StringName, asset_directory: String = "") -> String:
@@ -141,25 +130,11 @@ func publish(asset: PCGStandardAsset, asset_directory: String = "", fault: Strin
 ## 重载一份已发布资产（含全部网格与验收报告校验）。
 ## 返回 {ok, asset, errors}；缺网格/缺报告/字段非法一律拒绝。
 func load_asset(path: String) -> Dictionary:
-	var errors: Array[String] = []
-	if not FileAccess.file_exists(path):
-		return {"ok": false, "asset": null, "errors": ["file not found: %s" % path]}
-	var json := JSON.new()
-	if json.parse(FileAccess.get_file_as_string(path)) != OK:
-		return {"ok": false, "asset": null,
-			"errors": ["invalid JSON in %s (line %d)" % [path, json.get_error_line()]]}
-	if not (json.data is Dictionary):
-		return {"ok": false, "asset": null, "errors": ["%s is not a JSON object" % path]}
-	var document := json.data as Dictionary
-	var version := int(document.get("format_version", 0))
-	if version > PCGStandardAsset.FORMAT_VERSION:
-		return {"ok": false, "asset": null,
-			"errors": ["%s format_version %d is newer than supported %d"
-				% [path, version, PCGStandardAsset.FORMAT_VERSION]]}
-	if not (document.get("payload") is Dictionary):
-		return {"ok": false, "asset": null, "errors": ["%s has no payload object" % path]}
+	var parsed := parse_envelope(path, PCGStandardAsset.FORMAT_VERSION)
+	if not parsed["ok"]:
+		return {"ok": false, "asset": null, "errors": parsed["errors"]}
 	var asset := PCGStandardAsset.new()
-	errors = asset.from_dict(document["payload"] as Dictionary)
+	var errors: Array[String] = asset.from_dict(parsed["payload"] as Dictionary)
 	if not errors.is_empty():
 		return {"ok": false, "asset": null, "errors": errors}
 	# 验收报告缺失/非法在 from_dict 已拒；这里再确认 verdict 非 rejected。
@@ -203,36 +178,18 @@ func load_asset(path: String) -> Dictionary:
 ## 载入目录内全部已发布资产；坏文件与重复 ID 记录在 last_report，
 ## 重复 ID 只保留首个，绝不静默跳过。
 func list_assets(asset_directory: String = "") -> Array[PCGStandardAsset]:
-	last_report = []
 	var assets: Array[PCGStandardAsset] = []
-	var dir := _resolve_dir(asset_directory)
-	var seen_ids := {}
-	var dir_access := DirAccess.open(dir)
-	if dir_access == null:
-		last_report.append("directory not readable: %s" % dir)
-		return assets
-	var file_names := dir_access.get_files()
-	file_names.sort()
-	for file_name in file_names:
-		if not file_name.ends_with(FILE_SUFFIX):
-			continue
-		var path := dir + "/" + file_name
-		var loaded := load_asset(path)
-		if not loaded["ok"]:
-			last_report.append("%s: %s" % [file_name, "; ".join(loaded["errors"])])
-			continue
-		var asset: PCGStandardAsset = loaded["asset"]
-		var id := String(asset.asset_id())
-		if id.is_empty():
-			last_report.append("%s: stable_id is empty" % file_name)
-			continue
-		if seen_ids.has(id):
-			last_report.append("%s: duplicate asset id \"%s\" (already loaded from %s); skipped"
-				% [file_name, id, seen_ids[id]])
-			continue
-		seen_ids[id] = file_name
-		assets.append(asset)
+	assets.assign(list_documents(asset_directory, FILE_SUFFIX, _load_asset_entry))
 	return assets
+
+
+func _load_asset_entry(path: String) -> Dictionary:
+	var loaded := load_asset(path)
+	if not loaded["ok"]:
+		return {"ok": false, "errors": loaded["errors"]}
+	var asset: PCGStandardAsset = loaded["asset"]
+	return {"ok": true, "item": asset, "id": String(asset.asset_id()),
+		"id_label": "asset id", "empty_id_note": "stable_id is empty"}
 
 
 func _save_mesh_atomic(mesh: ArrayMesh, path: String) -> Error:
@@ -266,7 +223,3 @@ func _face_count(mesh: ArrayMesh) -> int:
 		else:
 			faces += indices.size() / 3
 	return faces
-
-
-func _resolve_dir(asset_directory: String) -> String:
-	return asset_directory if not asset_directory.is_empty() else directory

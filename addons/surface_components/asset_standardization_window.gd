@@ -28,9 +28,7 @@ const LOD_CLASS_NAME := "PCGMeshLod"
 const STABLE_ID_CLASS_NAME := "PCGStableId"
 const ASSET_CLASS_NAME := "PCGStandardAsset"
 const ASSET_STORE_CLASS_NAME := "PCGStandardAssetStore"
-const SHARED_DIR_CANDIDATES := [
-	"res://addons/pcg_shared",
-]
+const SHARED_RESOLVER_PATH := "res://addons/pcg_shared/pcg_shared_class_resolver.gd"
 const DEFAULT_TASKS_DIRECTORY := "res://assets/tasks"
 const DEFAULT_PUBLISH_DIRECTORY := "res://assets/published"
 const EPS := 0.0001
@@ -599,41 +597,16 @@ func _resolve_shared_scripts() -> void:
 
 
 static func _find_shared_script(global_class: String) -> GDScript:
-	for entry in ProjectSettings.get_global_class_list():
-		if String(entry.get("class", "")) == global_class:
-			var script: GDScript = load(String(entry.get("path", "")))
-			if script != null and script.can_instantiate():
-				return script
-	for dir_path in SHARED_DIR_CANDIDATES:
-		var script := _scan_dir_for_class(dir_path, global_class)
-		if script != null:
-			return script
-	return null
-
-
-static func _scan_dir_for_class(dir_path: String, global_class: String) -> GDScript:
-	var dir := DirAccess.open(dir_path)
-	if dir == null:
+	var resolver := _shared_resolver()
+	if resolver == null:
 		return null
-	for file_name in dir.get_files():
-		if not file_name.ends_with(".gd"):
-			continue
-		var full_path := dir_path.path_join(file_name)
-		var file := FileAccess.open(full_path, FileAccess.READ)
-		if file == null:
-			continue
-		if _has_class_declaration(file.get_as_text(), global_class):
-			var script: GDScript = load(full_path)
-			if script != null and script.can_instantiate():
-				return script
-	return null
+	return resolver.find_shared_script(global_class)
 
 
-static func _has_class_declaration(source: String, global_class: String) -> bool:
-	for line in source.split("\n"):
-		if line.strip_edges() == "class_name " + global_class:
-			return true
-	return false
+static func _shared_resolver() -> GDScript:
+	if not ResourceLoader.exists(SHARED_RESOLVER_PATH):
+		return null
+	return load(SHARED_RESOLVER_PATH) as GDScript
 
 
 func _inspect(mesh: Mesh) -> Dictionary:

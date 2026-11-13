@@ -9,9 +9,7 @@ signal tasks_changed
 const DEFAULT_TASKS_DIRECTORY := "res://assets/tasks"
 const TASK_CLASS_NAME := "PCGAssetTask"
 const STORE_CLASS_NAME := "PCGAssetTaskStore"
-const SHARED_DIR_CANDIDATES := [
-	"res://addons/pcg_shared",
-]
+const SHARED_RESOLVER_PATH := "res://addons/pcg_shared/pcg_shared_class_resolver.gd"
 
 var tasks_directory := DEFAULT_TASKS_DIRECTORY
 var task_script: GDScript
@@ -33,8 +31,9 @@ func _ready() -> void:
 	title = "L0 资产任务与精度规范"
 	close_requested.connect(hide)
 	min_size = Vector2i(620, 640)
-	_build_ui()
+	# 先解析共享脚本再建表单：下拉枚举直接取自 PCGAssetTask 常量。
 	_resolve_shared_scripts()
+	_build_ui()
 
 func open_tasks(directory: String = "") -> void:
 	if not directory.is_empty():
@@ -112,39 +111,16 @@ func _resolve_shared_scripts() -> void:
 			store.directory = tasks_directory
 
 static func _find_shared_script(global_class: String) -> GDScript:
-	for entry in ProjectSettings.get_global_class_list():
-		if String(entry.get("class", "")) == global_class:
-			var script: GDScript = load(String(entry.get("path", "")))
-			if script != null and script.can_instantiate():
-				return script
-	for dir_path in SHARED_DIR_CANDIDATES:
-		var script := _scan_dir_for_class(dir_path, global_class)
-		if script != null:
-			return script
-	return null
-
-static func _scan_dir_for_class(dir_path: String, global_class: String) -> GDScript:
-	var dir := DirAccess.open(dir_path)
-	if dir == null:
+	var resolver := _shared_resolver()
+	if resolver == null:
 		return null
-	for file_name in dir.get_files():
-		if not file_name.ends_with(".gd"):
-			continue
-		var full_path := dir_path.path_join(file_name)
-		var file := FileAccess.open(full_path, FileAccess.READ)
-		if file == null:
-			continue
-		if _has_class_declaration(file.get_as_text(), global_class):
-			var script: GDScript = load(full_path)
-			if script != null and script.can_instantiate():
-				return script
-	return null
+	return resolver.find_shared_script(global_class)
 
-static func _has_class_declaration(source: String, global_class: String) -> bool:
-	for line in source.split("\n"):
-		if line.strip_edges() == "class_name " + global_class:
-			return true
-	return false
+
+static func _shared_resolver() -> GDScript:
+	if not ResourceLoader.exists(SHARED_RESOLVER_PATH):
+		return null
+	return load(SHARED_RESOLVER_PATH) as GDScript
 
 func _build_ui() -> void:
 	var root := VBoxContainer.new()
@@ -172,21 +148,20 @@ func _build_ui() -> void:
 
 	_line_field(form, "任务 ID", &"task_id")
 	_line_field(form, "显示名称", &"display_name")
-	_option_field(form, "类别", &"category",
-		["door", "window", "support", "sign", "decoration", "stairs", "pipe", "host", "other"])
+	_option_field(form, "类别", &"category", _task_enum(&"CATEGORIES"))
 	_text_field(form, "用途", &"purpose")
 	_line_field(form, "风格标签（逗号分隔）", &"style_tags")
 	_line_field(form, "参考链接（逗号分隔）", &"reference_urls")
-	_option_field(form, "生产者", &"producer", ["human", "ai", "external", "procedural"])
+	_option_field(form, "生产者", &"producer", _task_enum(&"PRODUCERS"))
 	_line_field(form, "来源工具", &"source_tool")
 	_text_field(form, "来源提示词", &"source_prompt")
 	_line_field(form, "来源种子", &"source_seed")
 	_vec3_field(form, "目标尺寸 (m)", &"target_size", 0.0, 1000.0, 0.05)
 	_vec3_field(form, "尺寸下限 (m)", &"size_min", 0.0, 1000.0, 0.05)
 	_vec3_field(form, "尺寸上限 (m)", &"size_max", 0.0, 1000.0, 0.05)
-	_option_field(form, "精度档位", &"precision_tier", ["near", "mid", "far"])
-	_option_field(form, "UV 策略", &"uv_policy", ["world_scale", "texel_density", "custom"])
-	_option_field(form, "碰撞策略", &"collision_policy", ["none", "box", "convex", "concave"])
+	_option_field(form, "精度档位", &"precision_tier", _task_enum(&"PRECISION_TIERS"))
+	_option_field(form, "UV 策略", &"uv_policy", _task_enum(&"UV_POLICIES"))
+	_option_field(form, "碰撞策略", &"collision_policy", _task_enum(&"COLLISION_POLICIES"))
 	_spin_field(form, "LOD0 三角预算", &"tri_budget", 0.0, 100000000.0, 100.0)
 	_spin_field(form, "LOD1 三角预算", &"lod1_budget", 0.0, 100000000.0, 100.0)
 	_spin_field(form, "LOD2 三角预算", &"lod2_budget", 0.0, 100000000.0, 100.0)
@@ -202,8 +177,7 @@ func _build_ui() -> void:
 	_text_field(form, "禁止特征", &"prohibited_features")
 	_spin_field(form, "变体数量", &"variant_count", 1.0, 256.0, 1.0)
 	_line_field(form, "候选引用（逗号分隔）", &"candidate_refs")
-	_option_field(form, "状态", &"status",
-		["draft", "assigned", "candidate", "pending_acceptance", "accepted", "rejected"])
+	_option_field(form, "状态", &"status", _task_enum(&"STATUSES"))
 	_text_field(form, "验收备注", &"acceptance_notes")
 
 	var validation_heading := Label.new()
@@ -263,6 +237,14 @@ func _spin_field(parent: Control, label_text: String, field: StringName, minimum
 	row.add_child(spin)
 	fields[field] = spin
 	return spin
+
+func _task_enum(constant_name: StringName) -> Array:
+	# 表单枚举以 PCGAssetTask 常量为唯一来源；共享 API 缺失时留空，
+	# 由 open_tasks 的“共享资产任务 API 缺失”提示负责报告。
+	if task_script == null:
+		return []
+	var values: Variant = task_script.get_script_constant_map().get(constant_name)
+	return values if values is Array else []
 
 func _option_field(parent: Control, label_text: String, field: StringName, values: Array) -> OptionButton:
 	var row := _field_row(parent, label_text)
