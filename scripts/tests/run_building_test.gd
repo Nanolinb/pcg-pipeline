@@ -34,6 +34,18 @@ func _run() -> void:
 		var inspection := inspector.inspect_mesh(body.mesh)
 		_check(inspection["ok"], "挤出主体必须封闭且无退化面：%s / %s" % [building.name, inspection["errors"]])
 		_check(_signed_volume(body.mesh) < 0.0, "主体应使用 Godot 朝外绕序：%s" % building.name)
+	var connector := PCGSkybridgeConnector.new()
+	connector.id = &"wall_probe"
+	connector.building_id = &"house_l"
+	connector.edge_index = 1
+	connector.floor = 1
+	plan.connectors.append(connector)
+	var opened := generator.build_building(plan.get_footprint(&"house_l"), plan.master_seed, catalog,
+		plan.footprints, plan.facade_exclusions_for(&"house_l"), plan, plan.connectors_for_building(&"house_l"))
+	var opened_body := opened["root"].get_node_or_null("DerivedSolid") as MeshInstance3D
+	_check(opened_body != null and opened_body.mesh != null and inspector.inspect_mesh(opened_body.mesh)["ok"], "带廊桥门洞时主体墙面必须生成且保持封闭")
+	opened["root"].free()
+	plan.connectors.clear()
 	var role_counts := _role_counts(result["root"])
 	_check(role_counts.get(DefinitionRole("DOOR"), 0) == 2, "两栋建筑应保留单门入口")
 	_check(role_counts.get(DefinitionRole("DOUBLE_DOOR"), 0) == 1, "主建筑应使用带遮阳顶的双门入口")
@@ -66,6 +78,88 @@ func _run() -> void:
 	])
 	_check(not plan.validation_errors().is_empty(), "自交平面必须被校验拦截")
 	plan = PCGBuildingPlan.demo()
+
+	# 完整生成必须与增量路径同源：结合点避让与门洞裁切在 build_plan 中同样生效。
+	var connected := PCGBuildingPlan.demo()
+	var plan_connector := PCGSkybridgeConnector.new()
+	plan_connector.id = &"conn_plan"
+	plan_connector.building_id = &"house_l"
+	plan_connector.edge_index = 1
+	plan_connector.edge_t = 0.5
+	plan_connector.floor = 1
+	connected.connectors.append(plan_connector)
+	var connected_result := generator.build_plan(connected, catalog)
+	_check(connected_result["errors"].is_empty(), "带结合点的平面应通过完整生成")
+	var connected_l: Node3D = null
+	for building in connected_result["buildings"]:
+		if building.get_meta("footprint_id") == &"house_l":
+			connected_l = building
+	_check(connected_l != null and _edge_floor_windows(connected_l, 1, 1) == 0,
+		"完整生成必须与增量路径一样避让结合点开间")
+	var plain_l := generator.build_building(PCGBuildingPlan.demo().get_footprint(&"house_l"), "seed", catalog)
+	var plain_triangles := _mesh_triangles(plain_l["root"].get_node("DerivedSolid").mesh)
+	var cut_triangles := _mesh_triangles(connected_l.get_node("DerivedSolid").mesh)
+	_check(cut_triangles > plain_triangles, "完整生成必须在结合点处裁切门洞（内凹洞道）")
+	plain_l["root"].free()
+	var plan_doorway_frames := 0
+	for child in connected_l.get_node("StandardComponents").get_children():
+		var frame_role: int = int(child.get_meta("component_role", -1))
+		if frame_role == DefinitionRole("DOOR") or frame_role == DefinitionRole("DOUBLE_DOOR"):
+			plan_doorway_frames += 1
+	_check(plan_doorway_frames == 1, "完整生成下建筑侧只保留自身入口，门套由廊桥侧生成")
+	connected_result["root"].free()
+
+	# 基准标高不得从一次构建泄漏到后续调用。
+	var sloped := PCGBuildingPlan.demo()
+	sloped.terrain_slope = Vector2(0.14, 0.08)
+	var sloped_result := generator.build_plan(sloped, catalog)
+	_check(sloped_result["errors"].is_empty(), "斜坡平面应成功生成")
+	var probe := generator._component_bounds(catalog.get_definition(&"window_basic"),
+		Transform3D(Basis.IDENTITY, Vector3.ZERO), Vector3.ONE)
+	var probe_local := catalog.get_definition(&"window_basic").get_mesh().get_aabb().position.y
+	_check(is_equal_approx(probe.position.y, probe_local),
+		"构建结束后基准标高不得泄漏到后续 _component_bounds 调用")
+	sloped_result["root"].free()
+
+	# 入口 bay 与窗口排布同源：未遮挡时门落在统一推导的开间中心。
+	var door_def: PCGBuildingComponentDefinition = catalog.get_definition(&"double_door_canopy_basic")
+	var window_def: PCGBuildingComponentDefinition = catalog.get_definition(&"window_basic")
+	var entrance_polygon := PCGBuildingPlan.demo().get_footprint(&"house_l").normalized_polygon()
+	var entrance_info := generator._choose_entrance(entrance_polygon, door_def, window_def, &"house_l", [], 0.0)
+	var plain_build := generator.build_building(PCGBuildingPlan.demo().get_footprint(&"house_l"), "seed", catalog)
+	var entrance_door: MeshInstance3D = null
+	for child in plain_build["root"].get_node("StandardComponents").get_children():
+		if int(child.get_meta("component_role", -1)) == DefinitionRole("DOUBLE_DOOR"):
+			entrance_door = child
+	var entrance_edge: int = entrance_info["edge"]
+	var ea: Vector2 = entrance_polygon[entrance_edge]
+	var eb: Vector2 = entrance_polygon[(entrance_edge + 1) % entrance_polygon.size()]
+	var door_origin: Vector3 = entrance_door.transform.origin
+	var door_t := (Vector2(door_origin.x, door_origin.z) - ea).dot(eb - ea) / (eb - ea).length_squared()
+	var entrance_spacing := maxf(window_def.size.x * 1.75, 1.25)
+	var entrance_bays := int(floor((eb - ea).length() / entrance_spacing))
+	var expected_t := (float(entrance_info["bay"]) + 0.5) / float(entrance_bays)
+	_check(entrance_door != null and absf(door_t - expected_t) < 0.02,
+		"入口门必须落在与窗口同一套推导的开间中心")
+	plain_build["root"].free()
+
+	# 入口边被结合点遮挡时，门改放到重排后的真实开间（旧实现因间距公式不一致会丢门）。
+	var blocked_fp := PCGBuildingPlan.demo().get_footprint(&"house_l")
+	var blocked_conn := PCGSkybridgeConnector.new()
+	blocked_conn.id = &"conn_block"
+	blocked_conn.building_id = &"house_l"
+	blocked_conn.edge_index = entrance_edge
+	blocked_conn.edge_t = 0.2
+	blocked_conn.floor = 0
+	var blocked_result := generator.build_building(blocked_fp, "seed", catalog, [],
+		[blocked_conn.exclusion(blocked_fp)], null, [blocked_conn])
+	var blocked_doors := 0
+	for child in blocked_result["root"].get_node("StandardComponents").get_children():
+		if int(child.get_meta("component_role", -1)) == DefinitionRole("DOUBLE_DOOR"):
+			blocked_doors += 1
+	_check(blocked_result["errors"].is_empty() and blocked_doors == 1,
+		"入口边被结合点遮挡时，入口门仍应落在重排后的真实开间（门套由廊桥侧生成）")
+	blocked_result["root"].free()
 
 	var scene: PackedScene = load("res://scenes/building_workbench.tscn")
 	var workbench := scene.instantiate()
@@ -117,6 +211,13 @@ func _run() -> void:
 	workbench.undo_redo.redo()
 	_check(workbench.plan.get_footprint(&"house_l").floors == 6, "重做应恢复新楼层参数")
 	var before_count: int = workbench.plan.footprints.size()
+	workbench._select_footprint(&"house_l")
+	workbench._split_selected()
+	_check(workbench.plan.footprints.size() == before_count and String(workbench.status_label.text).contains("结合点"),
+		"带廊桥结合点的建筑必须明确拒绝切分并提示")
+	workbench.plan.connectors.clear()
+	workbench.plan.skybridges.clear()
+	workbench._sync_plan()
 	workbench._split_selected()
 	_check(workbench.plan.footprints.size() == before_count + 1, "切分应新增一个独立面岛")
 	_check(workbench.plan.get_footprint(&"house_l") != null, "切分应保留原建筑 ID")
@@ -269,6 +370,13 @@ func _run() -> void:
 func DefinitionRole(role: String) -> int:
 	return PCGBuildingComponentDefinition.Role[role]
 
+func _mesh_triangles(mesh: Mesh) -> int:
+	var count := 0
+	for surface in mesh.get_surface_count():
+		var indices = mesh.surface_get_arrays(surface)[Mesh.ARRAY_INDEX]
+		count += int(indices.size() / 3) if indices != null else 0
+	return count
+
 func _role_counts(root: Node3D) -> Dictionary:
 	var counts: Dictionary = {}
 	for building in root.get_children():
@@ -380,6 +488,20 @@ func _roof_racks_fit(root: Node3D, plan: PCGBuildingPlan,
 			if bounds.grow(-0.02).intersects(hatch_bounds):
 				return false
 	return true
+
+func _edge_floor_windows(building: Node3D, edge_index: int, floor: int) -> int:
+	var count := 0
+	var components: Node3D = building.get_node("StandardComponents")
+	for child in components.get_children():
+		if int(child.get_meta("component_role", -1)) != PCGBuildingComponentDefinition.Role.WINDOW:
+			continue
+		var origin: Vector3 = child.transform.origin
+		if absf(origin.x - 0.225) > 0.05:
+			continue
+		var floor_base := float(floor) * 2.6
+		if origin.y > floor_base + 0.5 and origin.y < floor_base + 2.6:
+			count += 1
+	return count
 
 func _has_building_overlap(plan: PCGBuildingPlan, id: StringName) -> bool:
 	var target := plan.get_footprint(id)

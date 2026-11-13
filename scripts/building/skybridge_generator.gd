@@ -2,9 +2,10 @@
 class_name PCGSkybridgeGenerator
 extends RefCounted
 
-# 廊桥网络生成器：解析结合点 → 生成/编辑路径 → 交叉分析（合并或错开）→ 扫掠封闭截面 Mesh。
+# 廊桥网络生成器：解析结合点 → 生成/编辑路径 → 交叉求解（合并或错开）→ 扫掠封闭截面 Mesh。
 # 横截面高度重叠超过 60% 的交叉廊桥合并为一个 cross 交叉结构；
-# 否则通过 auto_lift 垂直错开，错开量保留在生成数据中并可继续手动微调。
+# 否则通过 auto_lift 垂直错开。错开求解在编辑阶段由 resolve_crossings 完成并写回生成数据，
+# build_network 只读取求解结果，不再修改 auto_lift，因此重复构建的语义摘要保持一致。
 
 const Connector = preload("res://scripts/building/skybridge_connector.gd")
 const Bridge = preload("res://scripts/building/skybridge_definition.gd")
@@ -66,6 +67,37 @@ func bridge_component(bridge: PCGSkybridgeDefinition,
 	fallback.size = Vector3(bridge.width, bridge.height, 1.0)
 	return fallback
 
+# 交叉求解（编辑/求解阶段调用）：先清零 auto_lift，再按当前路径重新计算合并与错开。
+# build_network 不再修改生成数据，保证重复构建的语义摘要与求解结果一致。
+func resolve_crossings(plan: PCGBuildingPlan,
+			catalog: PCGBuildingComponentCatalog = null) -> Dictionary:
+	var active: Array[PCGSkybridgeDefinition] = []
+	for bridge in plan.skybridges:
+		if bridge != null:
+			active.append(bridge)
+	for bridge in active:
+		bridge.auto_lift = 0.0
+	var junctions: Array = []
+	var lifted := PackedStringArray()
+	var merged := PackedStringArray()
+	for i in active.size():
+		for j in range(i + 1, active.size()):
+			var first := active[i]
+			var second := active[j]
+			if first.connector_a == second.connector_a or first.connector_b == second.connector_b \
+					or first.connector_a == second.connector_b or first.connector_b == second.connector_a:
+				continue
+			var conflict := _cross_conflict(first, second)
+			if conflict.is_empty():
+				continue
+			if float(conflict["overlap_ratio"]) > MERGE_OVERLAP:
+				junctions.append(conflict)
+				merged.append_array([String(first.id), String(second.id)])
+			else:
+				_lift_pair(first, second, conflict)
+				lifted.append(String(second.id) if String(second.id) > String(first.id) else String(first.id))
+	return {"junctions": junctions, "lifted": lifted, "merged": merged}
+
 func build_network(plan: PCGBuildingPlan,
 			catalog: PCGBuildingComponentCatalog = null) -> Dictionary:
 	var errors := PackedStringArray()
@@ -110,15 +142,24 @@ func build_network(plan: PCGBuildingPlan,
 				merged.append_array([String(first.id), String(second.id)])
 				junction_mesh_parts.append_array(_junction_parts(conflict))
 			else:
-				_lift_pair(first, second, conflict)
-				lifted.append(String(second.id) if String(second.id) > String(first.id) else String(first.id))
+				# 错开求解已在 resolve_crossings 完成；这里只按当前 auto_lift 上报状态，不再修改生成数据。
+				var upper_id := String(second.id) if String(second.id) > String(first.id) else String(first.id)
+				var upper := plan.get_skybridge(StringName(upper_id))
+				if upper != null and upper.auto_lift > 0.0:
+					lifted.append(upper_id)
 
 	var root := Node3D.new()
 	root.name = "Skybridges"
 	var triangle_count := 0
 	for bridge in active:
 		var component := bridge_component(bridge, catalog)
-		var built := _bridge_mesh(bridge, component)
+		var anchors: Array = []
+		for connector_id in [bridge.connector_a, bridge.connector_b]:
+			var connector := plan.get_connector(connector_id)
+			var footprint := plan.get_footprint(connector.building_id) if connector != null else null
+			if connector != null and footprint != null:
+				anchors.append(connector.anchor(footprint))
+		var built := _bridge_mesh(bridge, component, anchors)
 		var mesh: ArrayMesh = built["mesh"]
 		var visual := MeshInstance3D.new()
 		visual.name = "Skybridge_%s" % bridge.id
@@ -129,6 +170,7 @@ func build_network(plan: PCGBuildingPlan,
 		visual.set_meta("component_count", 1)
 		visual.set_meta("post_count", built["post_count"])
 		visual.set_meta("baluster_count", built["baluster_count"])
+		visual.set_meta("portal_count", built["portal_count"])
 		for surface in mesh.get_surface_count():
 			var material_id := component.material_id
 			var surface_color := bridge.color.darkened(0.05)
@@ -140,7 +182,7 @@ func build_network(plan: PCGBuildingPlan,
 					roughness = 0.5
 				2:
 					surface_color = bridge.color.darkened(0.28)
-			visual.set_surface_override_material(surface, _material_library().solid(
+			visual.set_surface_override_material(surface, preload("res://addons/pcg_shared/pcg_material_access.gd").library().solid(
 				material_id, surface_color, roughness))
 		root.add_child(visual)
 		triangle_count += _triangle_count(mesh)
@@ -149,7 +191,7 @@ func build_network(plan: PCGBuildingPlan,
 		var box := MeshInstance3D.new()
 		box.name = "SkybridgeJunction_%d" % junction_index
 		box.mesh = _boxes([part])
-		box.material_override = _material_library().solid(&"building/skybridge_junction", Color("5d7f8c"), 0.4)
+		box.material_override = preload("res://addons/pcg_shared/pcg_material_access.gd").library().solid(&"building/skybridge_junction", Color("5d7f8c"), 0.4)
 		box.set_meta("bridge_role", "skybridge_junction")
 		box.set_meta("junction_index", junction_index)
 		root.add_child(box)
@@ -266,11 +308,16 @@ func _path_direction_at(path: PackedVector3Array, near: Vector3) -> Vector3:
 # 沿采样路径扫掠标准组件横截面（薄桥面、扶手横档、出挑顶棚），
 # 支撑顶棚的立柱按桥长等距独立放置，侧面保持镂空；坡道/弧度自动跟随路径切向。
 func _bridge_mesh(bridge: PCGSkybridgeDefinition,
-			component: PCGBuildingComponentDefinition) -> Dictionary:
+			component: PCGBuildingComponentDefinition,
+			anchors: Array) -> Dictionary:
 	var groups := MeshFactory.skybridge_part_groups(component)
 	var path := bridge.sampled_path(SAMPLES_PER_SPAN)
 	var frame := _swept_arrays(path, groups["frame"])
 	var post_count := _append_interval_posts(path, groups["post"], frame)
+	var portal_count := 0
+	for anchor in anchors:
+		if _append_portal(frame, anchor, groups["portal"]):
+			portal_count += 1
 	var mesh := _mesh(frame[0], frame[1], frame[2], frame[3])
 	var accent := _swept_arrays(path, groups["accent"])
 	var baluster_count := _append_interval_balusters(path, groups["baluster"], accent)
@@ -279,7 +326,39 @@ func _bridge_mesh(bridge: PCGSkybridgeDefinition,
 	var roof := _swept_arrays(path, groups["roof"])
 	var roof_mesh := _mesh(roof[0], roof[1], roof[2], roof[3])
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, roof_mesh.surface_get_arrays(0))
-	return {"mesh": mesh, "post_count": post_count, "baluster_count": baluster_count}
+	return {"mesh": mesh, "post_count": post_count, "baluster_count": baluster_count,
+		"portal_count": portal_count}
+
+# 在结合点立面处生成门户框（门套），样式由廊桥组件 portal 参数决定，随廊桥一起出现和消失。
+func _append_portal(arrays: Array, anchor: Dictionary, portal_info: Dictionary) -> bool:
+	if portal_info.is_empty() or not anchor.has("outward"):
+		return false
+	var outward: Vector3 = anchor["outward"]
+	var center: Vector3 = anchor["position"]
+	var fw: float = portal_info.get("frame_width", 0.12)
+	var protrude: float = portal_info.get("protrude", 0.14)
+	var opening_w: float = anchor.get("width", 1.2) + 0.3
+	var opening_h: float = anchor.get("height", 2.4)
+	if opening_w <= 0.0 or opening_h <= 0.0:
+		return false
+	var right := Vector3.UP.cross(outward).normalized()
+	var depth_axis := outward
+	var offset := outward * (protrude * 0.5 - 0.04)
+	var portal_center := center + Vector3.UP * (opening_h * 0.5)
+	var top := portal_center + Vector3.UP * (opening_h * 0.5 + fw * 0.5) + offset
+	var bottom := portal_center - Vector3.UP * (opening_h * 0.5 + fw * 0.5) + offset
+	_append_oriented_box(arrays, right, Vector3.UP, depth_axis, top,
+		Vector3(opening_w + fw * 2.0, fw, protrude))
+	_append_oriented_box(arrays, right, Vector3.UP, depth_axis, bottom,
+		Vector3(opening_w + fw * 2.0, fw, protrude))
+	# 侧框上下各嵌入顶/底框一半框宽，避免盒体共边形成非流形边。
+	var left := portal_center - right * (opening_w * 0.5 + fw * 0.5) + offset
+	var right_side := portal_center + right * (opening_w * 0.5 + fw * 0.5) + offset
+	_append_oriented_box(arrays, right, Vector3.UP, depth_axis, left,
+		Vector3(fw, opening_h + fw, protrude))
+	_append_oriented_box(arrays, right, Vector3.UP, depth_axis, right_side,
+		Vector3(fw, opening_h + fw, protrude))
+	return true
 
 func _path_length(path: PackedVector3Array) -> float:
 	var total := 0.0
@@ -490,6 +569,3 @@ func _triangle_count(mesh: Mesh) -> int:
 		var indices = mesh.surface_get_arrays(surface)[Mesh.ARRAY_INDEX]
 		count += int(indices.size() / 3) if indices != null else 0
 	return count
-
-func _material_library() -> Node:
-	return Engine.get_main_loop().root.get_node("MaterialLibrary")

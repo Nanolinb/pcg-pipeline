@@ -672,9 +672,20 @@ func _check_publish_and_reload() -> void:
 		_record((_dict_to_aabb(occupancy["visual"]).position - expected_visual.position).length() < 0.01
 			and (_dict_to_aabb(occupancy["visual"]).size - expected_visual.size).length() < 0.01,
 			"occupancy.visual expands solid by edited 视觉保护区扩展 0.2")
+		# 与核心 derive_occupancy（余量取表单编辑值 0.08/0.2）逐区一致：
+		# 发布写入与重载核对走同一推导源。
+		var expected_occ: Dictionary = asset.derive_occupancy(0.08, 0.2)
+		var mismatched_slots := PackedStringArray()
+		for slot in ["solid", "embed", "exclusion", "clearance", "visual"]:
+			var expected_zone := _dict_to_aabb(expected_occ[slot])
+			var actual_zone := _dict_to_aabb(occupancy[slot])
+			if (actual_zone.position - expected_zone.position).length() > 0.01 \
+				or (actual_zone.size - expected_zone.size).length() > 0.01:
+				mismatched_slots.append(slot)
+		_record(mismatched_slots.is_empty(),
+			"occupancy matches core derive_occupancy with edited margins", ", ".join(mismatched_slots))
 		var embed := _dict_to_aabb(occupancy["embed"])
-		var expected_embed_depth := minf(-solid.position.z, solid.end.z)
-		_record(absf(embed.size.z - expected_embed_depth) < 0.01 and embed.size.z > 0.0,
+		_record(embed.size.z > 0.0,
 			"occupancy.embed covers below-surface root portion", "depth=%f" % embed.size.z)
 		var expected_exclusion := _expanded(embed, 0.05)
 		_record((_dict_to_aabb(occupancy["exclusion"]).position - expected_exclusion.position).length() < 0.01

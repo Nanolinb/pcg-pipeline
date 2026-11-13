@@ -5,7 +5,7 @@ extends RefCounted
 # 纯数据/补丁模型：before/after 只携带受影响字段，
 # 不以 NodePath 作为稳定身份（target_id 由消费者自行解析）。
 # before/after 统一使用规范化序列化（字典键排序、浮点量化 1e-5，
-# 见 PCGSharedMaterialCodec.hash_dict），命令流可哈希、可审计。
+# 见 PCGCanonicalSerializer），命令流可哈希、可审计。
 
 var command_id: StringName = &""
 var target_id: StringName = &""
@@ -38,10 +38,11 @@ func from_dict(data: Dictionary) -> bool:
 	timestamp_ms = int(data.get("timestamp_ms", 0))
 	return true
 
-# 补丁哈希：目标 + 作用域 + 双向补丁经规范化序列化后取 SHA-256。
+# 补丁哈希：目标 + 作用域 + 双向补丁经规范化序列化后取 SHA-256
+# （全部委托 PCGCanonicalSerializer）。
 # do→undo→redo 往返后同一命令的补丁哈希必须一致（验收 T10）。
 func patch_hash() -> String:
-	return PCGSharedMaterialCodec.hash_dict({
+	return PCGCanonicalSerializer.hash_document({
 		"target_id": String(target_id),
 		"scope": scope,
 		"before": before,

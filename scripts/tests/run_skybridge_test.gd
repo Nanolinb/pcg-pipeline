@@ -74,6 +74,7 @@ func _test_connector_and_bridge_creation(generator: PCGSkybridgeGenerator, catal
 			plan.get_footprint(&"house_l").wall_color.lerp(
 				plan.get_footprint(&"house_tower").wall_color, 0.5)),
 		"廊桥配色应取两端建筑墙色的中间色")
+	_check(int(bridge_visual.get_meta("portal_count")) == 2, "廊桥两端应各生成一个立面门户框")
 	result["root"].free()
 
 func _test_window_avoidance(catalog: PCGBuildingComponentCatalog) -> void:
@@ -120,7 +121,7 @@ func _test_doorway_cut(catalog: PCGBuildingComponentCatalog) -> void:
 		if role == PCGBuildingComponentDefinition.Role.DOOR \
 				or role == PCGBuildingComponentDefinition.Role.DOUBLE_DOOR:
 			doorway_frames += 1
-	_check(doorway_frames >= 2, "门洞处应出现门套组件（含原入口门）")
+	_check(doorway_frames == 1, "建筑侧只保留自身入口，连廊门套应由廊桥生成")
 	plain["root"].free()
 	cut["root"].free()
 
@@ -197,15 +198,25 @@ func _test_cross_merge_and_lift(generator: PCGSkybridgeGenerator, catalog: PCGBu
 		var position: Vector3 = node["position"]
 		position.y = 4.0
 		node["position"] = position
+	# 错开属于求解阶段：先 resolve_crossings 写回 auto_lift，build_network 只读取结果。
+	var solved := generator.resolve_crossings(lifted_plan, catalog)
+	var lift := lifted_plan.get_skybridge(&"bridge_2").auto_lift
+	_check(lift > 2.1 and lift < 2.3, "较低廊桥应在求解阶段自动错开到净空上方，实测 %+0.2f" % lift)
+	_check(solved["lifted"].has("bridge_2"), "求解结果应标记被抬升的廊桥")
 	var second := generator.build_network(lifted_plan, catalog)
 	_check(second["junctions"].is_empty(), "垂直重叠不足 60% 的交叉不应合并")
-	var lift := lifted_plan.get_skybridge(&"bridge_2").auto_lift
-	_check(lift > 2.1 and lift < 2.3, "较低廊桥应自动错开到净空上方，实测 %+0.2f" % lift)
+	_check(second["lifted"].has("bridge_2"), "生成结果应上报已错开的廊桥")
 	var deck_after := INF
 	for point in lifted_plan.get_skybridge(&"bridge_2").sampled_path(8):
 		deck_after = minf(deck_after, point.y)
 	_check(deck_after >= 5.6 - 0.001, "错开后桥面应位于下层桥顶之上")
+	var digest_before: String = second["root"].get_meta("semantic_digest")
+	var repeat := generator.build_network(lifted_plan, catalog)
+	_check(is_equal_approx(lifted_plan.get_skybridge(&"bridge_2").auto_lift, lift)
+			and repeat["root"].get_meta("semantic_digest") == digest_before,
+		"重复构建不得再修改 auto_lift，语义摘要必须保持一致")
 	second["root"].free()
+	repeat["root"].free()
 
 	var boundary_plan := _crossing_plan(catalog)
 	for node in boundary_plan.get_skybridge(&"bridge_2").nodes:
@@ -259,11 +270,30 @@ func _test_workbench_integration() -> void:
 	_check(workbench.plan.connectors.size() == 4, "撤销廊桥不应影响结合点")
 	workbench.undo_redo.redo()
 	_check(workbench.plan.skybridges.size() == 2, "重做应恢复廊桥")
+	workbench.plan_editor.selected_bridge_id = &"bridge_2"
+	workbench._delete_selected_bridge()
+	_check(workbench.plan.skybridges.size() == 1, "删除应移除选中廊桥")
+	_check(workbench.plan.connectors.size() == 2, "删除廊桥应级联移除两端入口结合点")
+	workbench.undo_redo.undo()
+	_check(workbench.plan.skybridges.size() == 2 and workbench.plan.connectors.size() == 4,
+		"撤销删除应同时恢复廊桥与两端入口")
+	workbench._on_connector_selected(&"conn_l_tower")
+	workbench._on_connector_floor_changed(3.0)
+	_check(workbench.plan.get_connector(&"conn_l_tower").floor == 3, "修改结合点楼层应写入数据")
+	var demo_bridge = workbench.plan.get_skybridge(&"bridge_demo")
+	_check(is_equal_approx(demo_bridge.node_positions()[0].y, 3.0 * 2.6),
+		"已连接廊桥端点应随结合点楼层升高")
+	workbench.undo_redo.undo()
+	_check(workbench.plan.get_connector(&"conn_l_tower").floor == 1, "撤销应恢复结合点楼层")
+	workbench.undo_redo.redo()
 	var bridge = workbench.plan.get_skybridge(&"bridge_2")
 	bridge.set_node_tension(1, 0.0)
 	bridge.set_node_position(1, Vector3(1.8, 3.4, -1.0))
 	workbench._sync_skybridges()
 	_check(workbench.skybridge_root != null, "节点编辑后廊桥网络应重建")
+	var stable_root: Node3D = workbench.skybridge_root
+	workbench._sync_skybridges()
+	_check(workbench.skybridge_root == stable_root, "无变化的同步不得重复重建廊桥网络")
 	workbench.undo_redo.undo()
 	workbench.undo_redo.undo()
 	_check(workbench.plan.get_skybridge(&"bridge_2") == null, "连续撤销应回到标注前状态")
@@ -342,8 +372,8 @@ func _total_windows(building: Node3D) -> int:
 	return count
 
 func _finish() -> void:
-	if checks != 60:
-		failures.append("实际执行检查数 %d 与预期 60 不符，可能存在脚本错误中断了测试" % checks)
+	if checks != 71:
+		failures.append("实际执行检查数 %d 与预期 71 不符，可能存在脚本错误中断了测试" % checks)
 	if failures.is_empty():
 		print("SKYBRIDGE_TEST_RESULT: PASS checks=%d" % checks)
 		quit(0)

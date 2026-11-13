@@ -69,6 +69,32 @@ func connectors_for_building(id: StringName) -> Array[PCGSkybridgeConnector]:
 			result.append(connector)
 	return result
 
+# 建筑立面开窗避让区：完整生成（build_plan）与增量重建（workbench）共用同一来源。
+func facade_exclusions_for(id: StringName) -> Array:
+	var footprint := get_footprint(id)
+	var result: Array = []
+	if footprint == null:
+		return result
+	for connector in connectors_for_building(id):
+		result.append(connector.exclusion(footprint))
+	return result
+
+# 单栋建筑的生成输入签名：生成器 semantic_digest 与工作台脏检查共用同一来源，
+# 结合点/避让区变化必须能触发对应建筑的增量重建。
+func facade_signature_for(id: StringName) -> Dictionary:
+	var footprint := get_footprint(id)
+	if footprint == null:
+		return {}
+	var connector_data: Array = []
+	for connector in connectors_for_building(id):
+		connector_data.append(connector.semantic_data())
+	return {
+		"building": footprint.semantic_data(),
+		"terrain": [terrain_slope.x, terrain_slope.y],
+		"exclusions": facade_exclusions_for(id),
+		"connectors": connector_data,
+	}
+
 func skybridges_for_building(id: StringName) -> Array[PCGSkybridgeDefinition]:
 	var result: Array[PCGSkybridgeDefinition] = []
 	for bridge in skybridges:

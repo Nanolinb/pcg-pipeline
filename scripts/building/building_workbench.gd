@@ -33,6 +33,7 @@ var building_nodes: Dictionary = {}
 var selected_id: StringName = &""
 var selected_ids: Array[StringName] = []
 var selected_bridge_id: StringName = &""
+var selected_connector_id: StringName = &""
 var selected_node_index: int = -1
 var camera: Camera3D
 var camera_target := Vector3(0.8, 3.8, 1.0)
@@ -191,11 +192,12 @@ func _build_ui() -> void:
 	_button(left, "模式：建筑主体平面编辑", func(): _set_editor_mode(PCGBuildingPlanEditor.InteractionMode.FOOTPRINT,
 		"建筑主体平面编辑模式：拖动整栋或顶点；Shift+单击多选。"))
 	_button(left, "模式：标注结合点", func(): _set_editor_mode(PCGBuildingPlanEditor.InteractionMode.CONNECTOR,
-		"结合点模式：点击建筑立面边缘放置廊桥结合点，楼层取下方“结合点楼层”。"))
+		"结合点模式：点击建筑立面边缘放置廊桥结合点；点击已有结合点选中后，可用下方“结合点楼层”修改其楼层。"))
 	_button(left, "模式：桥节点编辑", func(): _set_editor_mode(PCGBuildingPlanEditor.InteractionMode.BRIDGE_NODE,
 		"桥节点模式：拖动路径节点改变走向与弧度；选中节点后可在右侧面板调转弯强度和桥面高度。"))
 	connector_floor_spin = _spin_row(left, "结合点楼层", 0.0, 11.0, 1.0)
 	connector_floor_spin.value = 1.0
+	connector_floor_spin.value_changed.connect(_on_connector_floor_changed)
 	_button(left, "生成廊桥（连接两个空闲结合点）", _create_skybridge)
 	_button(left, "删除选中廊桥", _delete_selected_bridge)
 	bridge_info_label = Label.new()
@@ -268,6 +270,7 @@ func _make_plan_editor() -> PCGBuildingPlanEditor:
 	editor.footprint_move_finished.connect(_on_building_move_finished)
 	editor.vertex_drag_finished.connect(_on_vertex_drag_finished)
 	editor.connector_placed.connect(_on_connector_placed)
+	editor.connector_selected.connect(_on_connector_selected)
 	editor.bridge_node_selected.connect(_on_bridge_node_selected)
 	editor.bridge_node_moved.connect(_on_bridge_node_moved)
 	editor.bridge_node_drag_finished.connect(_on_bridge_node_drag_finished)
@@ -393,10 +396,7 @@ func _sync_plan() -> bool:
 	var valid: Dictionary = {}
 	for footprint in plan.footprints:
 		valid[footprint.id] = true
-		var signature := PCGCanonicalSerializer.hash_document({
-			"building": footprint.semantic_data(),
-			"terrain": [plan.terrain_slope.x, plan.terrain_slope.y],
-		})
+		var signature := PCGCanonicalSerializer.hash_document(plan.facade_signature_for(footprint.id))
 		if not building_nodes.has(footprint.id):
 			_rebuild_building(footprint.id)
 		elif building_nodes[footprint.id].get_meta("semantic_digest", "") != signature:
@@ -419,11 +419,8 @@ func _rebuild_building(id: StringName) -> bool:
 	var footprint := plan.get_footprint(id)
 	if footprint == null:
 		return false
-	var exclusions: Array = []
-	for connector in plan.connectors_for_building(id):
-		exclusions.append(connector.exclusion(footprint))
 	var result := generator.build_building(footprint, plan.master_seed, catalog,
-		plan.footprints, exclusions, plan, plan.connectors_for_building(id))
+		plan.footprints, plan.facade_exclusions_for(id), plan, plan.connectors_for_building(id))
 	if not result["errors"].is_empty():
 		status_label.text = "保留上一份有效网格：%s" % "; ".join(result["errors"])
 		return false
@@ -438,6 +435,8 @@ func _rebuild_building(id: StringName) -> bool:
 	return true
 
 func _sync_skybridges() -> bool:
+	# 交叉错开属于求解阶段：先按当前路径重算 auto_lift，再取摘要，保证 digest 与求解结果一致。
+	skybridge_generator.resolve_crossings(plan, catalog)
 	var digest := PCGCanonicalSerializer.hash_document(
 		skybridge_generator.network_semantic_data(plan))
 	if digest == _skybridge_digest and skybridge_root != null:
@@ -491,6 +490,44 @@ func _set_editor_mode(mode: int, hint: String) -> void:
 		_update_node_editor()
 	status_label.text = hint
 
+func _on_connector_selected(connector_id: StringName) -> void:
+	selected_connector_id = connector_id
+	var connector := plan.get_connector(connector_id)
+	if connector == null:
+		return
+	connector_floor_spin.set_value_no_signal(connector.floor)
+	status_label.text = "已选中结合点 %s（%s · F%d）；修改“结合点楼层”即可调整其高度。" % [
+		connector.id, connector.building_id, connector.floor]
+
+func _on_connector_floor_changed(value: float) -> void:
+	var connector := plan.get_connector(selected_connector_id)
+	if connector == null:
+		return
+	var footprint := plan.get_footprint(connector.building_id)
+	if footprint == null:
+		return
+	var before := _plan_snapshot()
+	connector.floor = clampi(int(value), 0, footprint.floors - 1)
+	# 已连接的廊桥端点随结合点楼层移动，中间节点保持在两端中点。
+	var anchor := connector.anchor(footprint)
+	var end_position: Vector3 = anchor["position"] - anchor["outward"] * SkybridgeGen.RECESS_DEPTH
+	for bridge in plan.skybridges:
+		if bridge == null:
+			continue
+		var index := -1
+		if bridge.connector_a == connector.id:
+			index = 0
+		elif bridge.connector_b == connector.id:
+			index = bridge.nodes.size() - 1
+		if index >= 0 and bridge.nodes.size() >= 3:
+			bridge.set_node_position(index, end_position)
+			var first: Vector3 = bridge.nodes[0]["position"]
+			var last: Vector3 = bridge.nodes[bridge.nodes.size() - 1]["position"]
+			bridge.set_node_position(bridge.nodes.size() / 2, (first + last) * 0.5)
+	_sync_plan()
+	_register_plan_action("修改结合点楼层", before, _plan_snapshot())
+	status_label.text = "结合点 %s 楼层已改为 F%d；门洞与已连接廊桥已联动。" % [connector.id, connector.floor]
+
 func _on_connector_placed(building_id: StringName, edge_index: int, edge_t: float) -> void:
 	var footprint := plan.get_footprint(building_id)
 	if footprint == null:
@@ -507,6 +544,7 @@ func _on_connector_placed(building_id: StringName, edge_index: int, edge_t: floa
 		index += 1
 		connector.id = &"conn_%d" % index
 	plan.connectors.append(connector)
+	selected_connector_id = &""
 	_sync_plan()
 	_register_plan_action("标注廊桥结合点", before, _plan_snapshot())
 	status_label.text = "已在 %s 边缘标注结合点 %s（F%d）；再标注一个结合点即可生成廊桥。" % [
@@ -554,6 +592,19 @@ func _delete_selected_bridge() -> void:
 		return
 	var before := _plan_snapshot()
 	plan.skybridges.erase(bridge)
+	# 级联删除两端结合点：门洞与门套由结合点驱动，删除后主体自动重建恢复墙面。
+	for connector_id in [bridge.connector_a, bridge.connector_b]:
+		var still_used := false
+		for other in plan.skybridges:
+			if other != null and (other.connector_a == connector_id or other.connector_b == connector_id):
+				still_used = true
+				break
+		if not still_used:
+			var connector := plan.get_connector(connector_id)
+			if connector != null:
+				if connector.id == selected_connector_id:
+					selected_connector_id = &""
+				plan.connectors.erase(connector)
 	plan_editor.selected_bridge_id = &""
 	plan_editor.selected_node_index = -1
 	if detail_plan_editor != null:
@@ -565,7 +616,7 @@ func _delete_selected_bridge() -> void:
 	_update_node_editor()
 	_sync_plan()
 	_register_plan_action("删除廊桥", before, _plan_snapshot())
-	status_label.text = "已删除廊桥 %s，可通过撤销恢复。" % bridge_id
+	status_label.text = "已删除廊桥 %s 及其两端入口（结合点），主体墙面随之恢复，可通过撤销找回。" % bridge_id
 
 func _on_bridge_node_selected(bridge_id: StringName, node_index: int) -> void:
 	selected_bridge_id = bridge_id
@@ -921,6 +972,9 @@ func _update_fusion_button() -> void:
 func _split_selected() -> void:
 	var footprint := plan.get_footprint(selected_id)
 	if footprint == null:
+		return
+	if not plan.connectors_for_building(selected_id).is_empty():
+		status_label.text = "%s 仍有廊桥结合点；切分会改变立面边序号，请先移除连接，再切分。" % selected_id
 		return
 	var polygon := footprint.normalized_polygon()
 	var bounds := _polygon_bounds(polygon)

@@ -89,6 +89,10 @@ static func skybridge_part_groups(definition) -> Dictionary:
 			"spacing": 0.8,
 			"x": w * 0.5 - 0.045,
 		},
+		"portal": {
+			"frame_width": 0.12,
+			"protrude": 0.14,
+		},
 	}
 
 static func extrude(polygon: PackedVector2Array, height: float, openings: Array = []) -> ArrayMesh:

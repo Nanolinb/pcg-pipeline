@@ -30,6 +30,7 @@ func _initialize() -> void:
 	_check_scripts_compile()
 	_check_command_data_model()
 	_check_quantization()
+	_check_nested_dictionary_hash_stability()
 	_check_create_undo_redo()
 	_check_param_undo_redo()
 	_check_drag_merge_single_history()
@@ -132,6 +133,39 @@ func _check_quantization() -> void:
 	var normalized: Dictionary = command.normalize_patch(command.after)
 	_record(normalized["anchor"] is Array and normalized["anchor"][0] is float,
 		"anchor normalizes to float array")
+
+func _check_nested_dictionary_hash_stability() -> void:
+	if _codec_script == null or _command_script == null:
+		_record(false, "nested dictionary hash checks skipped (scripts missing)")
+		return
+	# 嵌套 Dictionary 键序不影响哈希（旧 str() 嵌套实现的不稳定点）。
+	var forward: String = _codec_script.hash_dict(
+		{"outer": {"beta": 1, "alpha": 2}, "list": [{"y": 1.0, "x": 2.0}]})
+	var reordered: String = _codec_script.hash_dict(
+		{"list": [{"x": 2.0, "y": 1.0}], "outer": {"alpha": 2, "beta": 1}})
+	_record(forward == reordered, "nested dictionary key order does not affect hash")
+	_record(_codec_script.hash_dict({"outer": {"alpha": 2, "beta": 1}})
+		!= _codec_script.hash_dict({"outer": {"alpha": 2, "beta": 3}}),
+		"nested dictionary content change alters hash")
+	# 委托关系：hash_dict / patch_hash 即 PCGCanonicalSerializer.hash_document。
+	var doc := {"target_id": "surface_component_1", "scope": {"op": "param"},
+		"before": {"cfg": {"x": 1.0}}, "after": {"cfg": {"x": 2.0}}}
+	_record(_codec_script.hash_dict(doc) == PCGCanonicalSerializer.hash_document(doc),
+		"hash_dict delegates to PCGCanonicalSerializer")
+	var command: RefCounted = _command_script.new()
+	command.target_id = &"surface_component_1"
+	command.scope = {"op": &"param"}
+	command.before = {"cfg": {"y": 1.0, "x": 2.0}}
+	command.after = {"cfg": {"x": 2.0, "y": 1.0}}
+	var hash_a: String = command.patch_hash()
+	command.before = {"cfg": {"x": 2.0, "y": 1.0}}
+	command.after = {"cfg": {"y": 1.0, "x": 2.0}}
+	_record(hash_a == command.patch_hash(),
+		"patch_hash stable across nested dictionary key order")
+	_record(command.patch_hash() == PCGCanonicalSerializer.hash_document({
+		"target_id": String(command.target_id), "scope": command.scope,
+		"before": command.before, "after": command.after}),
+		"patch_hash delegates to PCGCanonicalSerializer")
 
 func _check_create_undo_redo() -> void:
 	_make_history()

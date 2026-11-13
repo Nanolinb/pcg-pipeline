@@ -11,11 +11,12 @@ extends Resource
 #
 # occupancy 语义（资产局部坐标 AABB，min/max 显式序列化）：
 # - solid：资产实体占用（网格 AABB）。
-# - embed：根部嵌入宿主的部分（根部平面 inward 侧厚 root_embed 的板区）。
+# - embed：根部嵌入宿主的部分（根部平面 inward 侧厚 root_embed 的板区与实体的交）。
 # - exclusion：宿主上不得再装其他组件的区域（embed 外扩 OCCUPANCY_MARGIN）。
-# - clearance：资产周围必须留空的区域（solid 外扩 OCCUPANCY_MARGIN）。
-# - visual：视觉呈现范围（solid 外扩 VISUAL_MARGIN）。
-# 发布时若为空则由网格与 root_embed 推导；加载时逐区校验，缺失/非法一律拒绝。
+# - clearance：资产周围必须留空的区域（solid 外扩净空余量，默认 OCCUPANCY_MARGIN）。
+# - visual：视觉呈现范围（solid 外扩视觉余量，默认 VISUAL_MARGIN）。
+# 发布时若为空则由网格与 root_embed 推导（余量可由调用方指定，窗口传入
+# 用户编辑值）；加载时逐区校验，缺失/非法一律拒绝。
 #
 # LOD 纪律：lod1_mesh/lod2_mesh 允许显式提供（lod_status="explicit"）；
 # 否则由 PCGMeshLod 真实减面（lod_status="auto"）。任何情况下都不得
@@ -107,8 +108,11 @@ func occupancy_zone(slot: String) -> AABB:
 
 
 ## 由规范化网格 AABB 与 root_embed 推导五类占用区域（资产局部坐标）。
-## 无网格时返回空字典（调用方应以校验错误处理）。
-func derive_occupancy() -> Dictionary:
+## clearance_margin/visual_margin 指定 clearance/visual 的外扩余量（负值按 0
+## 处理）；缺省用 OCCUPANCY_MARGIN / VISUAL_MARGIN。无网格时返回空字典
+## （调用方应以校验错误处理）。
+func derive_occupancy(clearance_margin: float = OCCUPANCY_MARGIN,
+		visual_margin: float = VISUAL_MARGIN) -> Dictionary:
 	var solid := mesh_aabb()
 	if normalized_mesh == null or solid.size == Vector3.ZERO:
 		return {}
@@ -117,35 +121,49 @@ func derive_occupancy() -> Dictionary:
 		"solid": serialize_aabb(solid),
 		"embed": serialize_aabb(embed),
 		"exclusion": serialize_aabb(embed.grow(OCCUPANCY_MARGIN)),
-		"clearance": serialize_aabb(solid.grow(OCCUPANCY_MARGIN)),
-		"visual": serialize_aabb(solid.grow(VISUAL_MARGIN)),
+		"clearance": serialize_aabb(solid.grow(maxf(clearance_margin, 0.0))),
+		"visual": serialize_aabb(solid.grow(maxf(visual_margin, 0.0))),
 	}
 
 
 ## 嵌入区：根部平面（过 root_offset、法向 outward_axis）inward 侧
-## 厚 root_embed 的板区与实体 AABB 的交；不相交或 depth<=0 时返回
-## root_offset 处的零尺寸 AABB（合法占位，不做负尺寸）。
+## 厚 root_embed 的板层与实体 AABB 的交；不相交、depth<=0 或 outward_axis
+## 为零时返回 root_offset 处的零尺寸 AABB（合法占位，不做负尺寸）。
+## 板层：-root_embed <= (p - root_offset)·outward_axis <= 0。凸体交集的
+## AABB 逐轴精确求解：沿轴 a 的边界由其余轴范围上法向投影的极值决定，
+## 旋转轴（非轴对齐 outward_axis）不再按主轴近似裁剪。
 func _derive_embed_zone(aabb: AABB) -> AABB:
 	if root_embed <= 0.0:
 		return AABB(root_offset, Vector3.ZERO)
-	var axis := 0
-	var best := absf(outward_axis.x)
-	if absf(outward_axis.y) > best:
-		axis = 1
-		best = absf(outward_axis.y)
-	if absf(outward_axis.z) > best:
-		axis = 2
-	var sign := 1.0 if outward_axis[axis] > 0.0 else -1.0
+	var normal := outward_axis.normalized()
+	if normal.length_squared() < 0.000001:
+		return AABB(root_offset, Vector3.ZERO)
 	var lo := aabb.position
 	var hi := aabb.end
-	var c0: float = root_offset[axis]
-	if sign > 0.0:
-		lo[axis] = maxf(lo[axis], c0 - root_embed)
-		hi[axis] = minf(hi[axis], c0)
-	else:
-		lo[axis] = maxf(lo[axis], c0)
-		hi[axis] = minf(hi[axis], c0 + root_embed)
-	if lo[axis] > hi[axis]:
+	for axis in 3:
+		var na: float = normal[axis]
+		if is_zero_approx(na):
+			continue
+		# S = Σ_{i≠a} n_i·(p_i - root_offset_i) 在实体其余轴范围上的极值。
+		var s_min := 0.0
+		var s_max := 0.0
+		for other in 3:
+			if other == axis:
+				continue
+			var contribution_lo: float = normal[other] * (lo[other] - root_offset[other])
+			var contribution_hi: float = normal[other] * (hi[other] - root_offset[other])
+			s_min += minf(contribution_lo, contribution_hi)
+			s_max += maxf(contribution_lo, contribution_hi)
+		# na·(p_a - root_offset_a) ∈ [-root_embed - S, -S]；最紧边界取 S 的对应极值。
+		var bound_lo := (-root_embed - s_max) / na
+		var bound_hi := (-s_min) / na
+		if na < 0.0:
+			var swap := bound_lo
+			bound_lo = bound_hi
+			bound_hi = swap
+		lo[axis] = maxf(lo[axis], root_offset[axis] + bound_lo)
+		hi[axis] = minf(hi[axis], root_offset[axis] + bound_hi)
+	if lo.x > hi.x or lo.y > hi.y or lo.z > hi.z:
 		return AABB(root_offset, Vector3.ZERO)
 	return AABB(lo, hi - lo)
 

@@ -10,6 +10,7 @@ signal footprint_moved(id: StringName, delta: Vector2)
 signal footprint_move_finished(id: StringName)
 signal vertex_drag_finished(id: StringName)
 signal connector_placed(building_id: StringName, edge_index: int, edge_t: float)
+signal connector_selected(connector_id: StringName)
 signal bridge_node_selected(bridge_id: StringName, node_index: int)
 signal bridge_node_moved(bridge_id: StringName, node_index: int, position: Vector3)
 signal bridge_node_drag_finished(bridge_id: StringName)
@@ -25,6 +26,7 @@ var selected_id: StringName = &""
 var selected_ids: Array[StringName] = []
 var interaction_mode: int = InteractionMode.FOOTPRINT
 var selected_bridge_id: StringName = &""
+var selected_connector_id: StringName = &""
 var selected_node_index: int = -1
 var _drag_id: StringName = &""
 var _drag_vertex: int = -1
@@ -203,11 +205,34 @@ func _handle_footprint_click(position: Vector2, additive: bool = false) -> void:
 			_panning = true
 
 func _handle_connector_click(position: Vector2) -> void:
+	var connector_hit := _pick_connector(position)
+	if not connector_hit.is_empty():
+		selected_connector_id = connector_hit["id"]
+		connector_selected.emit(selected_connector_id)
+		queue_redraw()
+		return
+	selected_connector_id = &""
 	var edge_hit := _pick_edge(position)
 	if not edge_hit.is_empty():
 		connector_placed.emit(edge_hit["id"], edge_hit["edge_index"], edge_hit["edge_t"])
 	else:
 		_panning = true
+
+func _pick_connector(position: Vector2) -> Dictionary:
+	for connector in plan.connectors:
+		if connector == null:
+			continue
+		var footprint := plan.get_footprint(connector.building_id)
+		if footprint == null:
+			continue
+		var polygon := footprint.normalized_polygon()
+		if polygon.is_empty():
+			continue
+		var index := clampi(connector.edge_index, 0, polygon.size() - 1)
+		var point := polygon[index].lerp(polygon[(index + 1) % polygon.size()], connector.edge_t)
+		if world_to_screen(point).distance_to(position) <= NODE_PICK_RADIUS:
+			return {"id": connector.id}
+	return {}
 
 func _handle_node_click(position: Vector2) -> void:
 	var node_hit := _pick_bridge_node(position)
@@ -316,13 +341,15 @@ func _draw_connectors() -> void:
 		var index := clampi(connector.edge_index, 0, polygon.size() - 1)
 		var point := polygon[index].lerp(polygon[(index + 1) % polygon.size()], connector.edge_t)
 		var screen := world_to_screen(point)
+		var is_selected := connector.id == selected_connector_id
+		var radius := 9.0 if is_selected else 7.0
 		var marker := PackedVector2Array([
-			screen + Vector2(0, -7), screen + Vector2(7, 0),
-			screen + Vector2(0, 7), screen + Vector2(-7, 0)])
-		draw_colored_polygon(marker, Color("6fd3c7"))
+			screen + Vector2(0, -radius), screen + Vector2(radius, 0),
+			screen + Vector2(0, radius), screen + Vector2(-radius, 0)])
+		draw_colored_polygon(marker, Color("ffd166") if is_selected else Color("6fd3c7"))
 		draw_polyline(marker + PackedVector2Array([marker[0]]), Color("123c38"), 1.0)
 		draw_string(font, screen + Vector2(9, -6), "F%d·%s" % [connector.floor, connector.id],
-			HORIZONTAL_ALIGNMENT_LEFT, -1.0, 11, Color("9fe8df"))
+			HORIZONTAL_ALIGNMENT_LEFT, -1.0, 11, Color("ffe3a3") if is_selected else Color("9fe8df"))
 
 func _draw_skybridges() -> void:
 	var font := get_theme_default_font()

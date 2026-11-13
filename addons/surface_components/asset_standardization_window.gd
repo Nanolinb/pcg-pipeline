@@ -37,8 +37,6 @@ const EPS := 0.0001
 ## docs/component_authoring.md：Godot 顺时针正面绕序、朝外约定 → 封闭网格有向体积为负。
 const VOLUME_TOLERANCE := 0.01
 const CHECKED_BY := "L1 资产标准化与验收窗口"
-## 与 PCGStandardAsset.OCCUPANCY_MARGIN 一致：禁入区 = 嵌入区外扩该余量。
-const EXCLUSION_MARGIN := 0.05
 
 var tasks_directory := DEFAULT_TASKS_DIRECTORY
 var publish_directory := DEFAULT_PUBLISH_DIRECTORY
@@ -550,7 +548,7 @@ func reload_published() -> Dictionary:
 	if last_occupancy.is_empty():
 		mismatches.append("重载资产缺少 occupancy 五类 AABB")
 	else:
-		for problem in _verify_occupancy(last_occupancy, restored_mesh.get_aabb()):
+		for problem in _verify_occupancy(last_occupancy, asset):
 			mismatches.append(problem)
 	# 恢复窗口状态：网格、白盒、LOD 与报告都以重载资产为准重算。
 	reloaded_asset = asset
@@ -749,41 +747,13 @@ func _build_standard_asset() -> Resource:
 		"checked_at": Time.get_unix_time_from_system(),
 		"notes": notes,
 	}
-	# 五类占用 AABB（核心正式 occupancy 字段，{slot: {"min","max"}}；
-	# 只允许 solid/embed/exclusion/clearance/visual 五个槽位）。
-	var occupancy := _build_occupancy()
+	# 五类占用 AABB：直接委托 PCGStandardAsset.derive_occupancy（单一推导源），
+	# 净空/视觉余量取表单编辑值；发布与重载核对走同一函数。
+	var occupancy: Dictionary = asset.derive_occupancy(
+		float(clearance_spin.value), float(visual_margin_spin.value))
 	asset.set("occupancy", occupancy)
 	last_occupancy = occupancy
 	return asset
-
-
-## 五类占用 AABB（资产局部坐标，min/max 显式序列化，与
-## PCGStandardAsset.OCCUPANCY_SLOTS 语义一致）：
-## solid 实体占用（网格 AABB）；embed 根部嵌入板区（表面 inward 侧）；
-## exclusion 禁入区（embed 外扩 0.05，与核心推导一致）；
-## clearance 通行净空（solid 外扩用户编辑的净空余量）；
-## visual 视觉保护区（solid 外扩用户编辑的视觉扩展）。
-func _build_occupancy() -> Dictionary:
-	var mesh := active_mesh()
-	var aabb: AABB = _inspect(mesh)["stats"]["aabb"]
-	var embed := _embed_zone(aabb)
-	return {
-		"solid": _serialize_aabb(aabb),
-		"embed": _serialize_aabb(embed),
-		"exclusion": _serialize_aabb(embed.grow(EXCLUSION_MARGIN)),
-		"clearance": _serialize_aabb(aabb.grow(float(clearance_spin.value))),
-		"visual": _serialize_aabb(aabb.grow(float(visual_margin_spin.value))),
-	}
-
-
-func _embed_zone(aabb: AABB) -> AABB:
-	var depth := maxf(minf(-aabb.position.z, aabb.end.z), 0.0)
-	return AABB(aabb.position, Vector3(aabb.size.x, aabb.size.y, depth))
-
-
-func _serialize_aabb(aabb: AABB) -> Dictionary:
-	return {"min": [aabb.position.x, aabb.position.y, aabb.position.z],
-		"max": [aabb.end.x, aabb.end.y, aabb.end.z]}
 
 
 func _extract_occupancy(asset: Resource) -> Dictionary:
@@ -809,7 +779,10 @@ func _vec3_from_variant(raw: Variant) -> Vector3:
 	return Vector3.ZERO
 
 
-func _verify_occupancy(occupancy: Dictionary, mesh_aabb: AABB) -> Array:
+## 重载核对：occupancy 必须与核心 PCGStandardAsset.derive_occupancy 在
+## 当前表单余量下的推导逐区一致（发布与重载同一推导源），solid 另与网格
+## AABB 核对。容差 0.01 m（序列化浮点噪声）。
+func _verify_occupancy(occupancy: Dictionary, asset: Resource) -> Array:
 	var problems := PackedStringArray()
 	for slot in ["solid", "embed", "exclusion", "clearance", "visual"]:
 		if not (occupancy.get(slot) is Dictionary):
@@ -817,28 +790,24 @@ func _verify_occupancy(occupancy: Dictionary, mesh_aabb: AABB) -> Array:
 	if not problems.is_empty():
 		return Array(problems)
 	var solid := _dict_to_aabb(occupancy["solid"])
+	var mesh_aabb: AABB = asset.normalized_mesh.get_aabb()
 	if (solid.position - mesh_aabb.position).length() > 0.01 \
 		or (solid.size - mesh_aabb.size).length() > 0.01:
 		problems.append("occupancy.solid 与网格 AABB 不一致")
-	var expected_embed := _embed_zone(solid)
-	if (_dict_to_aabb(occupancy["embed"]).position - expected_embed.position).length() > 0.01 \
-		or (_dict_to_aabb(occupancy["embed"]).size - expected_embed.size).length() > 0.01:
-		problems.append("occupancy.embed 板区不正确")
-	var expected_exclusion := expected_embed.grow(EXCLUSION_MARGIN)
-	if (_dict_to_aabb(occupancy["exclusion"]).position - expected_exclusion.position).length() > 0.01 \
-		or (_dict_to_aabb(occupancy["exclusion"]).size - expected_exclusion.size).length() > 0.01:
-		problems.append("occupancy.exclusion 未按嵌入区外扩 %.2f m" % EXCLUSION_MARGIN)
-	# 净空/视觉保护区必须与表单编辑值一致（可见编辑→发布→重载全链核对）。
-	var expected_clearance := solid.grow(float(clearance_spin.value))
-	var clearance := _dict_to_aabb(occupancy["clearance"])
-	if (clearance.position - expected_clearance.position).length() > 0.01 \
-		or (clearance.size - expected_clearance.size).length() > 0.01:
-		problems.append("occupancy.clearance 未按净空余量 %.3f m 扩展" % float(clearance_spin.value))
-	var expected_visual := solid.grow(float(visual_margin_spin.value))
-	var visual := _dict_to_aabb(occupancy["visual"])
-	if (visual.position - expected_visual.position).length() > 0.01 \
-		or (visual.size - expected_visual.size).length() > 0.01:
-		problems.append("occupancy.visual 未按视觉扩展 %.3f m 扩展" % float(visual_margin_spin.value))
+	var expected: Dictionary = asset.derive_occupancy(
+		float(clearance_spin.value), float(visual_margin_spin.value))
+	if expected.is_empty():
+		problems.append("occupancy 无法由核心 derive_occupancy 推导核对")
+		return Array(problems)
+	# 净空/视觉保护区必须与表单编辑值一致（可见编辑→发布→重载全链核对）；
+	# embed/exclusion 与核心推导（含旋转 outward 轴）逐区比对。
+	for slot in ["embed", "exclusion", "clearance", "visual"]:
+		var expected_zone := _dict_to_aabb(expected[slot])
+		var actual := _dict_to_aabb(occupancy[slot])
+		if (actual.position - expected_zone.position).length() > 0.01 \
+			or (actual.size - expected_zone.size).length() > 0.01:
+			problems.append("occupancy.%s 与核心推导不一致（净空 %.3f / 视觉 %.3f m）"
+				% [slot, float(clearance_spin.value), float(visual_margin_spin.value)])
 	return Array(problems)
 
 

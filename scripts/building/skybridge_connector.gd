@@ -10,7 +10,7 @@ extends Resource
 @export var edge_index: int = 0
 @export_range(0.02, 0.98, 0.01) var edge_t: float = 0.5
 @export var floor: int = 1
-@export var width: float = 1.8
+@export var width: float = 1.2
 @export var height: float = 2.4
 
 func validation_errors(footprint: PCGBuildingFootprint = null) -> PackedStringArray:
@@ -44,6 +44,8 @@ func anchor(footprint: PCGBuildingFootprint) -> Dictionary:
 		"position": Vector3(point.x, footprint.ground_elevation + float(floor) * footprint.floor_height, point.y),
 		"outward": outward,
 		"edge_length": maxf(edge.length(), 0.001),
+		"width": width,
+		"height": height,
 	}
 
 # 立面开窗避让区（边内 t 区间 + 楼层），供 building_generator 重排窗口。

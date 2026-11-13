@@ -26,6 +26,7 @@ func run(log_prefix: String = LOG_PREFIX) -> Dictionary:
 	_check_whitebox_and_collision()
 	_check_collision_layers()
 	_check_occupancy_zones()
+	_check_occupancy_margins_and_rotated_embed()
 	_check_missing_dependencies()
 	return {"checks_run": checks_run, "failures": failures.duplicate()}
 
@@ -627,6 +628,111 @@ func _check_occupancy_zones() -> void:
 	var hot2 := PCGStandardAsset.new()
 	_record(_errors_contain(hot2.from_dict(hot_data2), "occupancy"),
 		"occupancy: null zone value during reload rejected without crash")
+
+
+# ------------------------------------------ 占用余量参数与旋转轴 embed 推导
+
+func _box_mesh(size: Vector3) -> ArrayMesh:
+	# 以原点为中心的封闭盒体（绕序不影响 AABB/occupancy 推导）。
+	var h := size * 0.5
+	var verts := PackedVector3Array([
+		Vector3(-h.x, -h.y, -h.z), Vector3(h.x, -h.y, -h.z), Vector3(h.x, h.y, -h.z), Vector3(-h.x, h.y, -h.z),
+		Vector3(-h.x, -h.y, h.z), Vector3(h.x, -h.y, h.z), Vector3(h.x, h.y, h.z), Vector3(-h.x, h.y, h.z),
+	])
+	var idx := PackedInt32Array([
+		0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7,
+		0, 1, 5, 0, 5, 4, 3, 7, 6, 3, 6, 2,
+		0, 4, 7, 0, 7, 3, 1, 2, 6, 1, 6, 5,
+	])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+func _check_occupancy_margins_and_rotated_embed() -> void:
+	# 余量参数：clearance/visual 由调用方指定；缺省与显式默认完全一致。
+	var asset := _valid_asset("asset_occ_margins")
+	asset.normalized_mesh = _box_mesh(Vector3.ONE)
+	var solid := asset.mesh_aabb()
+	var custom: Dictionary = asset.derive_occupancy(0.2, 0.03)
+	_record(asset.derive_occupancy() == asset.derive_occupancy(
+		PCGStandardAsset.OCCUPANCY_MARGIN, PCGStandardAsset.VISUAL_MARGIN),
+		"occupancy: default margins equal explicit OCCUPANCY_MARGIN/VISUAL_MARGIN")
+	var clearance: AABB = PCGStandardAsset.parse_aabb(custom["clearance"])
+	var visual: AABB = PCGStandardAsset.parse_aabb(custom["visual"])
+	_record(is_equal_approx(clearance.size.x - solid.size.x, 0.4)
+		and is_equal_approx(clearance.size.y - solid.size.y, 0.4)
+		and is_equal_approx(clearance.size.z - solid.size.z, 0.4),
+		"occupancy: clearance grows solid by caller-specified margin")
+	_record(is_equal_approx(visual.size.x - solid.size.x, 0.06)
+		and is_equal_approx(visual.size.z - solid.size.z, 0.06),
+		"occupancy: visual grows solid by caller-specified margin")
+	var embed: AABB = PCGStandardAsset.parse_aabb(custom["embed"])
+	var exclusion: AABB = PCGStandardAsset.parse_aabb(custom["exclusion"])
+	_record(is_equal_approx(exclusion.size.x - embed.size.x, 2.0 * PCGStandardAsset.OCCUPANCY_MARGIN),
+		"occupancy: exclusion stays embed + OCCUPANCY_MARGIN with custom margins")
+	# 负余量按 0 处理（不退化为负尺寸）。
+	var clamped: Dictionary = asset.derive_occupancy(-0.5, -1.0)
+	_record((clamped["clearance"] as Dictionary) == PCGStandardAsset.serialize_aabb(solid)
+		and (clamped["visual"] as Dictionary) == PCGStandardAsset.serialize_aabb(solid),
+		"occupancy: negative margins clamp to zero growth")
+
+	# 旋转轴 embed：根部平面斜穿实体时，embed 为板层与实体的精确交集 AABB，
+	# 不再按主轴近似裁剪（旧实现会把斜轴当作轴对齐处理）。
+	var rotated := _valid_asset("asset_occ_rotated")
+	rotated.normalized_mesh = _box_mesh(Vector3.ONE)
+	rotated.root_embed = 0.1
+	var box := AABB(Vector3(-0.5, -0.5, -0.5), Vector3.ONE)
+	# n=(0.6,0,0.8)（已归一化）：板层 -0.1<=0.6x+0.8z<=0 与盒体交，
+	# z 范围 [-0.5, 0.375]，x/y 不变。
+	rotated.outward_axis = Vector3(0.6, 0.0, 0.8)
+	var rotated_embed: AABB = rotated._derive_embed_zone(box)
+	_record((rotated_embed.position - Vector3(-0.5, -0.5, -0.5)).length() < 0.0001
+		and (rotated_embed.end - Vector3(0.5, 0.5, 0.375)).length() < 0.0001,
+		"occupancy: rotated outward axis embed is the exact slab intersection",
+		"embed=%s" % str(rotated_embed))
+	# 负向旋转轴：结果与正向镜像。
+	rotated.outward_axis = Vector3(-0.6, 0.0, -0.8)
+	rotated_embed = rotated._derive_embed_zone(box)
+	_record((rotated_embed.position - Vector3(-0.5, -0.5, -0.375)).length() < 0.0001
+		and (rotated_embed.end - Vector3(0.5, 0.5, 0.5)).length() < 0.0001,
+		"occupancy: negative rotated outward axis mirrors the slab",
+		"embed=%s" % str(rotated_embed))
+	# 45° 斜轴：交集触及盒体全部六个面，embed AABB 等于整个实体
+	# （旧主轴近似只会得到单轴 0.1 厚板区）。
+	rotated.outward_axis = Vector3(1.0, 1.0, 0.0).normalized()
+	rotated_embed = rotated._derive_embed_zone(box)
+	_record((rotated_embed.position - box.position).length() < 0.0001
+		and (rotated_embed.size - box.size).length() < 0.0001,
+		"occupancy: 45-degree outward axis embed spans the full solid AABB",
+		"embed=%s" % str(rotated_embed))
+	# derive_occupancy 端到端：旋转轴 embed 进入正式五区。
+	var rotated_occ: Dictionary = rotated.derive_occupancy()
+	var occ_embed: AABB = PCGStandardAsset.parse_aabb(rotated_occ["embed"])
+	_record((occ_embed.position - box.position).length() < 0.0001
+		and (occ_embed.size - box.size).length() < 0.0001
+		and rotated_occ.keys().size() == 5,
+		"occupancy: rotated embed flows into derive_occupancy output")
+
+	# 发布/重载一致：显式余量推导的 occupancy 原样往返（Store 不二次推导）。
+	var store := PCGStandardAssetStore.new()
+	var dir := _test_dir("occupancy_custom_margins")
+	var custom_asset := _valid_asset("asset_occ_custom")
+	custom_asset.normalized_mesh = _box_mesh(Vector3.ONE)
+	# 12 面盒体无法被顶点聚类减面；LOD 目标高于面数走显式 passthrough。
+	custom_asset.lod1_target_faces = 250
+	custom_asset.lod2_target_faces = 250
+	custom_asset.occupancy = custom_asset.derive_occupancy(0.2, 0.03)
+	var published: Dictionary = store.publish(custom_asset, dir)
+	_record(published["ok"], "occupancy: custom-margin zones publish", "; ".join(published.get("errors", [])))
+	if published["ok"]:
+		var loaded: Dictionary = store.load_asset(published["path"])
+		_record(loaded["ok"] and (loaded["asset"] as PCGStandardAsset).occupancy == custom_asset.occupancy,
+			"occupancy: custom-margin zones round-trip through reload")
 
 
 func _five_zones() -> Dictionary:
