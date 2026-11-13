@@ -8,7 +8,10 @@ extends RefCounted
 # 2. PCGFusedWall 节点适配器暴露同一契约（薄包装，语义不变）；
 # 3. 纯数据宿主与既有 fused_wall 数学逐项等价（surface_transform /
 #    surface_distance / clamp_anchor / 射线锚点），G0 行为不变；
-# 4. 非法输入与非宿主对象返回明确失败，测试以非零退出码报告。
+# 4. PCGSurfaceMath 纯函数内核的已知值锚定（平面/圆柱/半球圆柱的
+#    transform/distance/clamp/raycast），以及与节点适配器的逐项等价
+#    （适配器 = 内核 + 坐标系适配）；
+# 5. 非法输入与非宿主对象返回明确失败，测试以非零退出码报告。
 #
 # 注意：禁止静态引用任何全局类（PCGFusedWall / PCGComponentDefinition /
 # PCGSurfaceHost*），一律在运行期 load()，否则脚本会在 autoload 注册前
@@ -25,6 +28,7 @@ var _surface_host_script: GDScript = null
 var _surface_host_data_script: GDScript = null
 var _fused_script: GDScript = null
 var _definition_script: GDScript = null
+var _math_script: GDScript = null
 
 var _tree: SceneTree = null
 
@@ -38,6 +42,8 @@ func run(tree: SceneTree) -> void:
 	_check_pure_data_math()
 	_check_adapter_contract()
 	await _check_adapter_parity()
+	_check_kernel_math()
+	await _check_kernel_parity()
 	_check_negative_paths()
 
 func _load_scripts() -> bool:
@@ -45,11 +51,12 @@ func _load_scripts() -> bool:
 	_surface_host_data_script = _load_global_class("PCGSurfaceHostData")
 	_fused_script = load("res://scripts/fused_wall.gd")
 	_definition_script = load("res://scripts/component_definition.gd")
+	_math_script = load("res://addons/pcg_shared/pcg_surface_math.gd")
 	var ok := _surface_host_script != null and _surface_host_data_script != null \
-		and _fused_script != null and _definition_script != null
-	_record(ok, "scripts compile", "host=%s data=%s fused=%s definition=%s" % [
+		and _fused_script != null and _definition_script != null and _math_script != null
+	_record(ok, "scripts compile", "host=%s data=%s fused=%s definition=%s math=%s" % [
 		_surface_host_script != null, _surface_host_data_script != null,
-		_fused_script != null, _definition_script != null])
+		_fused_script != null, _definition_script != null, _math_script != null])
 	return ok
 
 func _record(ok: bool, name: String, detail: String = "") -> void:
@@ -231,6 +238,110 @@ func _check_adapter_parity() -> void:
 			"adapter host_path_data structure stable (%s)" % KIND_NAMES[kind])
 		_record((fused.occupancy_query({}) as Array).is_empty(),
 			"adapter occupancy_query stable empty (%s)" % KIND_NAMES[kind])
+		fused.queue_free()
+		await _tree.process_frame
+
+func _check_kernel_math() -> void:
+	# 内核已知值锚定：不依赖任何宿主，独立锁定纯函数语义。
+	var wall := Vector3(6.0, 4.6, 0.36)
+	var radius := 1.35
+	var height := 3.8
+	var depth := 0.7
+	var identity := Transform3D.IDENTITY
+	# 平面：锚点映射到墙面点，距离为欧氏，钳制到墙面内缩边界。
+	var plane_t: Transform3D = _math_script.surface_transform(KIND_PLANE,
+		Vector2(1.5, -2.0), identity, wall, radius, height, wall.z)
+	_record(plane_t.origin.is_equal_approx(Vector3(1.5, -2.0, wall.z * 0.5)),
+		"kernel plane transform maps anchor to surface point")
+	_record(_math_script.surface_distance(KIND_PLANE, Vector2.ZERO, Vector2(3.0, 4.0), radius) == 5.0,
+		"kernel plane distance is euclidean")
+	var plane_c: Vector2 = _math_script.clamp_anchor(KIND_PLANE,
+		Vector2(99.0, -99.0), Vector2(1.2, 0.9), wall, radius, height)
+	_record(plane_c.is_equal_approx(Vector2(2.35, -1.8)),
+		"kernel plane clamp hits inset limits", "clamped=%s" % plane_c)
+	var plane_hit: Dictionary = _math_script.raycast(KIND_PLANE,
+		Vector3(0.3, 0.5, 6.0), Vector3(0.0, 0.0, -1.0), identity, wall, radius, height, wall.z)
+	_record(not plane_hit.is_empty()
+		and (plane_hit["anchor"] as Vector2).is_equal_approx(Vector2(0.3, 0.5))
+		and not plane_hit.has("host"),
+		"kernel plane raycast hits and stays host-free", "hit=%s" % plane_hit)
+	_record((_math_script.raycast(KIND_PLANE, Vector3(0.0, 0.0, 6.0),
+		Vector3(0.0, 0.0, 1.0), identity, wall, radius, height, wall.z) as Dictionary).is_empty(),
+		"kernel plane raycast miss returns empty")
+	_record((_math_script.raycast(KIND_PLANE, Vector3(10.0, 0.0, 6.0),
+		Vector3(0.0, 0.0, -1.0), identity, wall, radius, height, wall.z) as Dictionary).is_empty(),
+		"kernel plane raycast outside wall returns empty")
+	# 圆柱：距离沿周长取短弧，锚点展开到径向点，射线命中径向锚点。
+	var circumference := TAU * radius
+	_record(is_equal_approx(_math_script.surface_distance(KIND_CYLINDER,
+		Vector2.ZERO, Vector2(circumference * 0.75, 0.0), radius), circumference * 0.25),
+		"kernel cylinder distance wraps around circumference")
+	var cyl_t: Transform3D = _math_script.surface_transform(KIND_CYLINDER,
+		Vector2.ZERO, identity, wall, radius, height, depth)
+	_record(cyl_t.origin.is_equal_approx(Vector3(0.0, 0.0, radius)),
+		"kernel cylinder transform unwraps to radial point")
+	var cyl_hit: Dictionary = _math_script.raycast(KIND_CYLINDER,
+		Vector3(0.0, 0.7, radius + 2.0), Vector3(0.0, 0.0, -1.0), identity, wall, radius, height, depth)
+	_record(not cyl_hit.is_empty() and (cyl_hit["anchor"] as Vector2).is_equal_approx(Vector2(0.0, 0.7)),
+		"kernel cylinder radial raycast hits anchor", "anchor=%s" % cyl_hit.get("anchor", Vector2.ZERO))
+	var cyl_c: Vector2 = _math_script.clamp_anchor(KIND_CYLINDER,
+		Vector2(50.0, 0.0), Vector2(0.8, 0.8), wall, radius, height)
+	_record(absf(cyl_c.x) <= PI * radius + 0.001,
+		"kernel cylinder clamp wraps arc coordinate", "x=%f" % cyl_c.x)
+	# 半球圆柱：越过赤道的锚点法线上倾，穹顶射线命中极点锚点，钳制上界含穹顶弧长。
+	var equator := height * 0.5
+	var dome_t: Transform3D = _math_script.surface_transform(KIND_DOME_CYLINDER,
+		Vector2(0.0, equator + 0.3), identity, wall, radius, height, depth)
+	_record(dome_t.basis.z.y > 0.0, "kernel dome transform normal tilts upward")
+	var dome_hit: Dictionary = _math_script.raycast(KIND_DOME_CYLINDER,
+		Vector3(0.0, equator + radius + 2.0, 0.0), Vector3(0.0, -1.0, 0.0), identity, wall, radius, height, depth)
+	_record(not dome_hit.is_empty()
+		and (dome_hit["anchor"] as Vector2).is_equal_approx(Vector2(0.0, equator + radius * PI * 0.5)),
+		"kernel dome raycast hits pole anchor", "anchor=%s" % dome_hit.get("anchor", Vector2.ZERO))
+	var dome_c: Vector2 = _math_script.clamp_anchor(KIND_DOME_CYLINDER,
+		Vector2(0.0, 99.0), Vector2(0.8, 0.8), wall, radius, height)
+	_record(is_equal_approx(dome_c.y, equator + radius * PI * 0.5 - 0.05),
+		"kernel dome clamp reaches dome top", "y=%f" % dome_c.y)
+
+func _check_kernel_parity() -> void:
+	# 内核 ↔ 节点适配器逐项等价：适配器只允许做坐标系适配（传 global_transform）
+	# 与补 "host" 键，数学必须来自内核。G0 行为不变的直接证据。
+	var anchors := [Vector2(0.0, 0.0), Vector2(0.6, -1.1), Vector2(-1.7, 2.2), Vector2(2.9, 0.4)]
+	var definition = _definition_script.new()
+	definition.size = Vector2(1.2, 0.9)
+	for kind in [KIND_PLANE, KIND_CYLINDER, KIND_DOME_CYLINDER]:
+		var fused = _make_fused(kind)
+		await _tree.process_frame
+		for anchor in anchors:
+			var via_kernel: Transform3D = _math_script.surface_transform(kind, anchor,
+				fused.global_transform, fused.wall_size, fused.cylinder_radius,
+				fused.cylinder_height, fused.thickness)
+			_record(via_kernel.is_equal_approx(fused.surface_transform(anchor)),
+				"kernel transform parity (%s)" % KIND_NAMES[kind], "anchor=%s" % anchor)
+		for a in anchors:
+			for b in anchors:
+				_record(is_equal_approx(
+					_math_script.surface_distance(kind, a, b, fused.cylinder_radius),
+					fused.surface_distance(a, b)),
+					"kernel distance parity (%s)" % KIND_NAMES[kind], "a=%s b=%s" % [a, b])
+		for anchor in anchors + [Vector2(40.0, 8.0), Vector2(-40.0, -8.0)]:
+			_record((_math_script.clamp_anchor(kind, anchor, definition.size,
+				fused.wall_size, fused.cylinder_radius, fused.cylinder_height) as Vector2).is_equal_approx(
+				fused.clamp_anchor(anchor, definition)),
+				"kernel clamp parity (%s)" % KIND_NAMES[kind], "anchor=%s" % anchor)
+		var ray_origin: Vector3 = fused.global_transform * Vector3(0.3, 0.5, 6.0)
+		var ray_direction: Vector3 = (fused.global_transform.basis.z * -1.0).normalized()
+		var kernel_hit: Dictionary = _math_script.raycast(kind, ray_origin, ray_direction,
+			fused.global_transform, fused.wall_size, fused.cylinder_radius,
+			fused.cylinder_height, fused.thickness)
+		var adapter_hit: Dictionary = fused.ray_anchor(ray_origin, ray_direction)
+		_record(kernel_hit.is_empty() == adapter_hit.is_empty()
+			and (kernel_hit.is_empty() or (
+				(kernel_hit["anchor"] as Vector2).is_equal_approx(adapter_hit["anchor"])
+				and (kernel_hit["position"] as Vector3).is_equal_approx(adapter_hit["position"])
+				and (kernel_hit["normal"] as Vector3).is_equal_approx(adapter_hit["normal"])
+				and not kernel_hit.has("host"))),
+			"kernel raycast parity (%s)" % KIND_NAMES[kind])
 		fused.queue_free()
 		await _tree.process_frame
 

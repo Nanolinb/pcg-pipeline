@@ -46,7 +46,10 @@ var components: Array = []
 # PCGFusedWall 是平面/圆柱/半球圆柱三种主体的节点适配器：
 # GDScript 单继承下无法同时继承 RefCounted 的 PCGSurfaceHost 契约基类，
 # 因此以结构化方式实现同一组方法，由 PCGSurfaceHost.validate_surface_host() 校验。
-# 下方 surface_* / host_path_data / occupancy_query 全部是薄包装，
+# 表面数学（transform/distance/clamp/raycast）全部来自共享内核
+# PCGSurfaceMath（addons/pcg_shared/pcg_surface_math.gd），下方
+# surface_* / ray_anchor / clamp_anchor 只做坐标系适配（传 global_transform），
+# host_path_data / occupancy_query 是契约薄包装，
 # 语义与既有 ray_anchor / surface_transform 完全一致，既有调用方不受影响。
 # register_component / unregister_component 沿用既有组件节点句柄签名
 # （CSG 融合需要节点引用），是契约签名的适配器扩展。
@@ -254,127 +257,23 @@ func _create_outline_part(mesh: Mesh, local_position: Vector3) -> MeshInstance3D
 	return part
 
 func surface_transform(anchor: Vector2) -> Transform3D:
-	if surface_kind != SurfaceKind.PLANE:
-		var angle := anchor.x / cylinder_radius
-		if surface_kind == SurfaceKind.DOME_CYLINDER and anchor.y > cylinder_height * 0.5:
-			var latitude := (anchor.y - cylinder_height * 0.5) / cylinder_radius
-			var normal := Vector3(sin(angle) * cos(latitude), sin(latitude), cos(angle) * cos(latitude)).normalized()
-			var point := Vector3(0.0, cylinder_height * 0.5, 0.0) + normal * cylinder_radius
-			return global_transform * Transform3D(_radial_basis(angle, normal), point)
-		var point := Vector3(sin(angle) * cylinder_radius, anchor.y, cos(angle) * cylinder_radius)
-		var normal := Vector3(sin(angle), 0.0, cos(angle))
-		return global_transform * Transform3D(_radial_basis(angle, normal), point)
-	return global_transform * Transform3D(Basis.IDENTITY, Vector3(anchor.x, anchor.y, thickness * 0.5))
-
-func _radial_basis(angle: float, normal: Vector3) -> Basis:
-	var x := Vector3(cos(angle), 0.0, -sin(angle)).normalized()
-	var y := normal.cross(x).normalized()
-	return Basis(x, y, normal)
+	return PCGSurfaceMath.surface_transform(surface_kind, anchor, global_transform,
+		wall_size, cylinder_radius, cylinder_height, thickness)
 
 func ray_anchor(origin: Vector3, direction: Vector3) -> Dictionary:
-	if surface_kind == SurfaceKind.DOME_CYLINDER:
-		var cylinder_hit := _ray_cylinder(origin, direction)
-		var dome_hit := _ray_dome(origin, direction)
-		if cylinder_hit.is_empty():
-			return dome_hit
-		if dome_hit.is_empty():
-			return cylinder_hit
-		var cylinder_distance := origin.distance_to(cylinder_hit["position"])
-		var dome_distance := origin.distance_to(dome_hit["position"])
-		return dome_hit if dome_distance < cylinder_distance else cylinder_hit
-	if surface_kind == SurfaceKind.CYLINDER:
-		return _ray_cylinder(origin, direction)
-	var normal := global_basis.z.normalized()
-	var plane := Plane(normal, global_position + global_basis.z * thickness * 0.5)
-	var point: Variant = plane.intersects_ray(origin, direction)
-	if point == null:
+	var hit := PCGSurfaceMath.raycast(surface_kind, origin, direction, global_transform,
+		wall_size, cylinder_radius, cylinder_height, thickness)
+	if hit.is_empty():
 		return {}
-	var local := to_local(point)
-	if absf(local.x) > wall_size.x * 0.5 or absf(local.y) > wall_size.y * 0.5:
-		return {}
-	return {"anchor": Vector2(local.x, local.y), "position": point, "normal": normal, "host": self}
-
-func _ray_cylinder(origin: Vector3, direction: Vector3) -> Dictionary:
-	var local_origin := to_local(origin)
-	var local_direction := global_basis.inverse() * direction
-	var a := local_direction.x * local_direction.x + local_direction.z * local_direction.z
-	if a < 0.0000001:
-		return {}
-	var b := 2.0 * (local_origin.x * local_direction.x + local_origin.z * local_direction.z)
-	var c := local_origin.x * local_origin.x + local_origin.z * local_origin.z - cylinder_radius * cylinder_radius
-	var discriminant := b * b - 4.0 * a * c
-	if discriminant < 0.0:
-		return {}
-	var root := sqrt(discriminant)
-	var distances := [(-b - root) / (2.0 * a), (-b + root) / (2.0 * a)]
-	for distance in distances:
-		if distance < 0.0:
-			continue
-		var local_point: Vector3 = local_origin + local_direction * float(distance)
-		if absf(local_point.y) > cylinder_height * 0.5:
-			continue
-		var local_normal := Vector3(local_point.x, 0.0, local_point.z).normalized()
-		var angle := atan2(local_point.x, local_point.z)
-		return {
-			"anchor": Vector2(angle * cylinder_radius, local_point.y),
-			"position": to_global(local_point),
-			"normal": (global_basis * local_normal).normalized(),
-			"host": self,
-		}
-	return {}
-
-func _ray_dome(origin: Vector3, direction: Vector3) -> Dictionary:
-	var local_origin := to_local(origin)
-	var local_direction := global_basis.inverse() * direction
-	var center := Vector3(0.0, cylinder_height * 0.5, 0.0)
-	var offset := local_origin - center
-	var a := local_direction.length_squared()
-	var b := 2.0 * offset.dot(local_direction)
-	var c := offset.length_squared() - cylinder_radius * cylinder_radius
-	var discriminant := b * b - 4.0 * a * c
-	if a < 0.0000001 or discriminant < 0.0:
-		return {}
-	var root := sqrt(discriminant)
-	var distances := [(-b - root) / (2.0 * a), (-b + root) / (2.0 * a)]
-	for distance in distances:
-		if distance < 0.0:
-			continue
-		var local_point: Vector3 = local_origin + local_direction * float(distance)
-		if local_point.y < cylinder_height * 0.5 - 0.0001:
-			continue
-		var local_normal := (local_point - center).normalized()
-		var latitude := atan2(local_point.y - center.y, Vector2(local_point.x, local_point.z).length())
-		var angle := atan2(local_point.x, local_point.z)
-		return {
-			"anchor": Vector2(angle * cylinder_radius, center.y + latitude * cylinder_radius),
-			"position": to_global(local_point),
-			"normal": (global_basis * local_normal).normalized(),
-			"host": self,
-		}
-	return {}
+	hit["host"] = self
+	return hit
 
 func clamp_anchor(anchor: Vector2, definition: PCGComponentDefinition) -> Vector2:
-	if surface_kind != SurfaceKind.PLANE:
-		var half_arc := PI * cylinder_radius
-		var wrapped_x := fposmod(anchor.x + half_arc, half_arc * 2.0) - half_arc
-		var lower := -cylinder_height * 0.5 + definition.size.y * 0.5 + 0.05
-		var upper := cylinder_height * 0.5 - definition.size.y * 0.5 - 0.05
-		if surface_kind == SurfaceKind.DOME_CYLINDER:
-			upper = cylinder_height * 0.5 + cylinder_radius * PI * 0.5 - 0.05
-		return Vector2(wrapped_x, clampf(anchor.y, lower, maxf(lower, upper)))
-	var limits := Vector2(
-		maxf(0.0, (wall_size.x - definition.size.x) * 0.5 - 0.05),
-		maxf(0.0, (wall_size.y - definition.size.y) * 0.5 - 0.05)
-	)
-	return Vector2(clampf(anchor.x, -limits.x, limits.x), clampf(anchor.y, -limits.y, limits.y))
+	return PCGSurfaceMath.clamp_anchor(surface_kind, anchor, definition.size,
+		wall_size, cylinder_radius, cylinder_height)
 
 func surface_distance(a: Vector2, b: Vector2) -> float:
-	if surface_kind != SurfaceKind.PLANE:
-		var circumference := TAU * cylinder_radius
-		var arc_difference := absf(a.x - b.x)
-		arc_difference = minf(arc_difference, circumference - arc_difference)
-		return Vector2(arc_difference, a.y - b.y).length()
-	return a.distance_to(b)
+	return PCGSurfaceMath.surface_distance(surface_kind, a, b, cylinder_radius)
 
 func surface_raycast(origin: Vector3, direction: Vector3) -> Dictionary:
 	return ray_anchor(origin, direction)
