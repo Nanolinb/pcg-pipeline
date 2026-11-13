@@ -58,7 +58,9 @@ var seed_spin: SpinBox
 var connector_floor_spin: SpinBox
 var tension_spin: SpinBox
 var node_height_spin: SpinBox
-var undo_redo := UndoRedo.new()
+var session: BuildingPlanSession
+# 兼容入口：plan/快照/撤销统一经 BuildingPlanSession 的 PCGEditCommandHistory 适配。
+var undo_redo: PCGEditCommandHistory
 var _drag_before: Dictionary = {}
 var _bridge_drag_before: Dictionary = {}
 var _last_param_snapshot: Dictionary = {}
@@ -70,6 +72,8 @@ func _ready() -> void:
 	catalog.load_from("res://assets/building_components")
 	plan = Plan.demo()
 	_setup_demo_skybridge()
+	session = BuildingPlanSession.new(plan, _on_session_apply)
+	undo_redo = session.history
 	building_root = Node3D.new()
 	building_root.name = "Buildings"
 	add_child(building_root)
@@ -526,7 +530,7 @@ func _on_connector_floor_changed(value: float) -> void:
 			var last: Vector3 = bridge.nodes[bridge.nodes.size() - 1]["position"]
 			bridge.set_node_position(bridge.nodes.size() / 2, (first + last) * 0.5)
 	_sync_plan()
-	_register_plan_action("修改结合点楼层", before, _plan_snapshot())
+	_register_plan_action("修改结合点楼层", before, _plan_snapshot(), &"connector_floor:%s" % connector.id)
 	status_label.text = "结合点 %s 楼层已改为 F%d；门洞与已连接廊桥已联动。" % [connector.id, connector.floor]
 
 func _on_connector_placed(building_id: StringName, edge_index: int, edge_t: float) -> void:
@@ -648,7 +652,7 @@ func _on_bridge_node_drag_finished(bridge_id: StringName) -> void:
 		_bridge_drag_before = {}
 		return
 	var after := _bridge_snapshot(bridge)
-	_register_bridge_action("拖动廊桥节点", bridge_id, _bridge_drag_before, after)
+	_register_bridge_action("拖动廊桥节点", bridge_id, _bridge_drag_before, after, &"drag_bridge_node:%s" % bridge_id)
 	_bridge_drag_before = {}
 	status_label.text = "廊桥节点已更新；路径、交叉合并与错开已重新求解。"
 
@@ -771,7 +775,7 @@ func _on_building_moved(id: StringName, delta: Vector2) -> void:
 
 func _on_building_move_finished(id: StringName) -> void:
 	var after := _footprint_snapshot(plan.get_footprint(id))
-	_register_footprint_action("平移建筑", id, _drag_before, after)
+	_register_footprint_action("平移建筑", id, _drag_before, after, &"move_building:%s" % id)
 	_drag_before = {}
 
 func _on_vertex_drag_started(id: StringName) -> void:
@@ -784,7 +788,7 @@ func _on_plan_edited(id: StringName) -> void:
 
 func _on_vertex_drag_finished(id: StringName) -> void:
 	var after := _footprint_snapshot(plan.get_footprint(id))
-	_register_footprint_action("编辑平面顶点", id, _drag_before, after)
+	_register_footprint_action("编辑平面顶点", id, _drag_before, after, &"drag_vertex:%s" % id)
 	_drag_before = {}
 	status_label.text = "平面已更新；主体、立面和屋顶组件已联动。"
 
@@ -804,7 +808,7 @@ func _change_parameter(property: StringName, value: Variant) -> void:
 	var before := _last_param_snapshot.duplicate(true)
 	footprint.set(property, value)
 	var after := _footprint_snapshot(footprint)
-	_register_footprint_action("修改建筑参数", selected_id, before, after)
+	_register_footprint_action("修改建筑参数", selected_id, before, after, &"param:%s:%s" % [selected_id, property])
 	_last_param_snapshot = after
 	_rebuild_building(selected_id)
 	_update_inspector()
@@ -834,71 +838,20 @@ func _add_footprint() -> void:
 	status_label.text = "已在低密度区域新增 %s：%d 层；位置、轮廓和参数可复现。" % [footprint.id, footprint.floors]
 
 func _density_aware_shape(random: PCGRandomStream, id: StringName) -> PackedVector2Array:
-	var width := random.randf_range(1.8, 3.4)
-	var depth := random.randf_range(1.6, 3.2)
-	var shape := PackedVector2Array()
-	if random.randf() < 0.28:
-		shape = PackedVector2Array([
-			Vector2(-width * 0.5, -depth * 0.5), Vector2(width * 0.5, -depth * 0.5),
-			Vector2(width * 0.5, -depth * 0.1), Vector2(width * 0.1, -depth * 0.1),
-			Vector2(width * 0.1, depth * 0.5), Vector2(-width * 0.5, depth * 0.5),
-		])
-	else:
-		shape = PackedVector2Array([
-			Vector2(-width * 0.5, -depth * 0.5), Vector2(width * 0.5, -depth * 0.5),
-			Vector2(width * 0.5, depth * 0.5), Vector2(-width * 0.5, depth * 0.5),
-		])
-	var rotation := random.randf_range(-0.22, 0.22)
-	for index in shape.size():
-		shape[index] = shape[index].rotated(rotation)
-	if plan.footprints.is_empty():
-		return shape
-	var bounds := _plan_bounds()
-	var area := Rect2(bounds.position - Vector2(3.0, 3.0), bounds.size + Vector2(6.0, 6.0))
-	var center := bounds.get_center()
-	var best := Vector2(bounds.end.x + 2.0, center.y)
-	var best_score := INF
-	for candidate_index in 32:
-		var point := Vector2(
-			random.randf_range(area.position.x, area.end.x),
-			random.randf_range(area.position.y, area.end.y)
-		)
-		if _shape_overlaps(shape, point):
-			continue
-		var score := _density_at(point) + point.distance_to(center) * 0.025 + random.randf() * 0.08
-		if score < best_score:
-			best_score = score
-			best = point
-	return _translated_shape(shape, best)
+	return FootprintGeometryOps.density_aware_shape(random, _plan_polygons())
+
+func _plan_polygons() -> Array:
+	var polygons: Array = []
+	for footprint in plan.footprints:
+		if footprint != null:
+			polygons.append(footprint.normalized_polygon())
+	return polygons
 
 func _density_at(point: Vector2) -> float:
-	var density := 0.0
-	for footprint in plan.footprints:
-		if footprint == null:
-			continue
-		var polygon := footprint.normalized_polygon()
-		var area := absf(Footprint.signed_area(polygon))
-		var center := _polygon_bounds(polygon).get_center()
-		var radius := 3.0 + sqrt(area) * 0.5
-		var distance_sq := point.distance_squared_to(center)
-		density += area * exp(-distance_sq / (2.0 * radius * radius))
-	return density
+	return FootprintGeometryOps.density_at(point, _plan_polygons())
 
 func _shape_overlaps(shape: PackedVector2Array, point: Vector2) -> bool:
-	var candidate := _translated_shape(shape, point)
-	for footprint in plan.footprints:
-		if footprint == null:
-			continue
-		for part in Geometry2D.intersect_polygons(candidate, footprint.normalized_polygon()):
-			if absf(Footprint.signed_area(part)) > 0.001:
-				return true
-	return false
-
-func _translated_shape(shape: PackedVector2Array, offset: Vector2) -> PackedVector2Array:
-	var result := PackedVector2Array()
-	for point in shape:
-		result.append(point + offset)
-	return result
+	return FootprintGeometryOps.shape_overlaps(shape, point, _plan_polygons())
 
 func _fuse_selected() -> void:
 	if selected_ids.size() < 2:
@@ -917,14 +870,15 @@ func _fuse_selected() -> void:
 			return
 		targets.append(item)
 	var footprint := plan.get_footprint(selected_id)
-	var merged := footprint.normalized_polygon()
+	var others: Array = []
 	var removed: Array[StringName] = []
 	for other in targets:
 		if other.id == footprint.id:
 			continue
-		merged = Geometry2D.merge_polygons(merged, other.normalized_polygon())[0]
+		others.append(other.normalized_polygon())
 		footprint.floors = maxi(footprint.floors, other.floors)
 		removed.append(other.id)
+	var merged := FootprintGeometryOps.fuse(footprint.normalized_polygon(), others)
 	var before := _plan_snapshot()
 	footprint.polygon = merged
 	for other in targets:
@@ -942,18 +896,15 @@ func _can_fuse_selection() -> bool:
 	var primary := plan.get_footprint(selected_id)
 	if primary == null:
 		return false
-	var merged := primary.normalized_polygon()
+	var others: Array = []
 	for id in selected_ids:
 		if id == selected_id:
 			continue
 		var other := plan.get_footprint(id)
 		if other == null:
 			return false
-		var parts := Geometry2D.merge_polygons(merged, other.normalized_polygon())
-		if parts.size() != 1:
-			return false
-		merged = parts[0]
-	return true
+		others.append(other.normalized_polygon())
+	return FootprintGeometryOps.can_fuse(primary.normalized_polygon(), others)
 
 func _update_fusion_button() -> void:
 	if fusion_button == null:
@@ -968,28 +919,10 @@ func _split_selected() -> void:
 	if not plan.connectors_for_building(selected_id).is_empty():
 		status_label.text = "%s 仍有廊桥结合点；切分会改变立面边序号，请先移除连接，再切分。" % selected_id
 		return
-	var polygon := footprint.normalized_polygon()
-	var bounds := _polygon_bounds(polygon)
-	var vertical := bounds.size.x >= bounds.size.y
-	var margin := maxf(bounds.size.x, bounds.size.y) + 2.0
-	var center := bounds.get_center()
-	var clip := PackedVector2Array()
-	if vertical:
-		clip = PackedVector2Array([
-			Vector2(center.x - margin, center.y - margin), Vector2(center.x, center.y - margin),
-			Vector2(center.x, center.y + margin), Vector2(center.x - margin, center.y + margin),
-		])
-	else:
-		clip = PackedVector2Array([
-			Vector2(center.x - margin, center.y - margin), Vector2(center.x + margin, center.y - margin),
-			Vector2(center.x + margin, center.y), Vector2(center.x - margin, center.y),
-		])
-	var first := _largest_part(Geometry2D.intersect_polygons(polygon, clip))
-	var inverse := PackedVector2Array()
-	for point in clip:
-		inverse.append(center * 2.0 - point)
-	var second := _largest_part(Geometry2D.intersect_polygons(polygon, inverse))
-	if first.size() < 3 or second.size() < 3 or absf(Footprint.signed_area(first)) < 0.05 or absf(Footprint.signed_area(second)) < 0.05:
+	var parts := FootprintGeometryOps.split_centered(footprint.normalized_polygon())
+	var first: PackedVector2Array = parts["first"]
+	var second: PackedVector2Array = parts["second"]
+	if first.is_empty() or second.is_empty():
 		status_label.text = "当前轮廓无法沿中心轴切分，请先调整平面。"
 		return
 	var before := _plan_snapshot()
@@ -1042,22 +975,8 @@ func _footprint_snapshot(footprint: PCGBuildingFootprint) -> Dictionary:
 		"wall_color": footprint.wall_color, "wall_material_id": footprint.wall_material_id,
 	}
 
-func _register_footprint_action(name: String, id: StringName, before: Dictionary, after: Dictionary) -> void:
-	if before.is_empty() or before == after:
-		return
-	undo_redo.create_action(name)
-	undo_redo.add_do_method(_apply_footprint_snapshot.bind(id, after))
-	undo_redo.add_undo_method(_apply_footprint_snapshot.bind(id, before))
-	undo_redo.commit_action(false)
-
-func _apply_footprint_snapshot(id: StringName, snapshot: Dictionary) -> void:
-	var footprint := plan.get_footprint(id)
-	if footprint == null:
-		return
-	for key in snapshot:
-		footprint.set(key, snapshot[key])
-	_rebuild_building(id)
-	_select_footprint(id)
+func _register_footprint_action(name: String, id: StringName, before: Dictionary, after: Dictionary, merge_key: StringName = &"") -> void:
+	session.submit_footprint_action(name, id, before, after, merge_key)
 
 func _bridge_snapshot(bridge: PCGSkybridgeDefinition) -> Dictionary:
 	if bridge == null:
@@ -1070,95 +989,45 @@ func _bridge_snapshot(bridge: PCGSkybridgeDefinition) -> Dictionary:
 		"color": bridge.color,
 	}
 
-func _register_bridge_action(name: String, id: StringName, before: Dictionary, after: Dictionary) -> void:
-	if before.is_empty() or before == after:
-		return
-	undo_redo.create_action(name)
-	undo_redo.add_do_method(_apply_bridge_snapshot.bind(id, after))
-	undo_redo.add_undo_method(_apply_bridge_snapshot.bind(id, before))
-	undo_redo.commit_action(false)
-
-func _apply_bridge_snapshot(id: StringName, snapshot: Dictionary) -> void:
-	var bridge := plan.get_skybridge(id)
-	if bridge == null:
-		return
-	bridge.nodes = snapshot["nodes"].duplicate(true)
-	bridge.auto_lift = snapshot["auto_lift"]
-	bridge.width = snapshot["width"]
-	bridge.height = snapshot["height"]
-	bridge.color = snapshot["color"]
-	_sync_skybridges()
-	plan_editor.set_plan(plan)
-	if detail_plan_editor != null:
-		detail_plan_editor.set_plan(plan)
-	_update_node_editor()
+func _register_bridge_action(name: String, id: StringName, before: Dictionary, after: Dictionary, merge_key: StringName = &"") -> void:
+	session.submit_bridge_action(name, id, before, after, merge_key)
 
 func _plan_snapshot() -> Dictionary:
-	var footprints: Array = []
-	for footprint in plan.footprints:
-		footprints.append(footprint.duplicate(true) if footprint != null else null)
-	var connectors: Array = []
-	for connector in plan.connectors:
-		connectors.append(connector.duplicate(true) if connector != null else null)
-	var skybridges: Array = []
-	for bridge in plan.skybridges:
-		skybridges.append(bridge.duplicate(true) if bridge != null else null)
-	return {
-		"footprints": footprints,
-		"connectors": connectors,
-		"skybridges": skybridges,
-	}
+	return session.snapshot()
 
-func _register_plan_action(name: String, before: Dictionary, after: Dictionary) -> void:
-	undo_redo.create_action(name)
-	undo_redo.add_do_method(_restore_plan.bind(after))
-	undo_redo.add_undo_method(_restore_plan.bind(before))
-	undo_redo.commit_action(false)
+func _register_plan_action(name: String, before: Dictionary, after: Dictionary, merge_key: StringName = &"") -> void:
+	session.submit_plan_action(name, before, after, merge_key)
 
-func _restore_plan(snapshot: Dictionary) -> void:
-	plan.footprints.clear()
-	for footprint in snapshot["footprints"]:
-		plan.footprints.append(footprint.duplicate(true) if footprint != null else null)
-	plan.connectors.clear()
-	for connector in snapshot["connectors"]:
-		plan.connectors.append(connector.duplicate(true) if connector != null else null)
-	plan.skybridges.clear()
-	for bridge in snapshot["skybridges"]:
-		plan.skybridges.append(bridge.duplicate(true) if bridge != null else null)
-	if plan.get_footprint(selected_id) == null:
-		selected_id = plan.footprints[0].id if not plan.footprints.is_empty() else &""
-	if plan.get_skybridge(selected_bridge_id) == null:
-		selected_bridge_id = &""
-		selected_node_index = -1
-	_sync_plan()
-	_select_footprint(selected_id)
-	_update_node_editor()
+# 会话历史应用入口：plan 数据已由 BuildingPlanSession 恢复，这里只做 UI/场景同步。
+func _on_session_apply(command: PCGEditCommand, use_after: bool) -> void:
+	match StringName(command.scope.get("op", &"")):
+		&"plan":
+			if plan.get_footprint(selected_id) == null:
+				selected_id = plan.footprints[0].id if not plan.footprints.is_empty() else &""
+			if plan.get_skybridge(selected_bridge_id) == null:
+				selected_bridge_id = &""
+				selected_node_index = -1
+			_sync_plan()
+			_select_footprint(selected_id)
+			_update_node_editor()
+		&"footprint":
+			_rebuild_building(command.target_id)
+			_select_footprint(command.target_id)
+		&"bridge":
+			_sync_skybridges()
+			plan_editor.set_plan(plan)
+			if detail_plan_editor != null:
+				detail_plan_editor.set_plan(plan)
+			_update_node_editor()
+		&"terrain":
+			_update_terrain()
+			_sync_plan()
 
 func _polygon_bounds(polygon: PackedVector2Array) -> Rect2:
-	var bounds := Rect2(polygon[0], Vector2.ZERO)
-	for point in polygon:
-		bounds = bounds.expand(point)
-	return bounds
+	return FootprintGeometryOps.polygon_bounds(polygon)
 
 func _plan_bounds() -> Rect2:
-	var bounds := Rect2()
-	for footprint in plan.footprints:
-		var polygon := footprint.normalized_polygon()
-		if polygon.is_empty():
-			continue
-		var item := _polygon_bounds(polygon)
-		bounds = item if not bounds.has_area() else bounds.merge(item)
-	return bounds
-
-func _largest_part(parts: Array) -> PackedVector2Array:
-	var result := PackedVector2Array()
-	var area := 0.0
-	for part in parts:
-		var part_area := absf(Footprint.signed_area(part))
-		if part_area > area:
-			area = part_area
-			result = part
-	return result
+	return FootprintGeometryOps.plan_bounds(_plan_polygons())
 
 func _role_name(role: int) -> String:
 	return ["立面窗", "入口", "屋顶边线", "墙角", "立面出挑", "屋顶设备", "屋顶晾衣", "窗外晾衣", "小阳台", "双门入口", "廊桥"][role]
@@ -1218,10 +1087,7 @@ func _toggle_terrain() -> void:
 	var before := plan.terrain_slope
 	var after := Vector2.ZERO if not before.is_zero_approx() else Vector2(0.14, 0.08)
 	_set_terrain_slope(after)
-	undo_redo.create_action("切换斜坡地形")
-	undo_redo.add_do_method(_set_terrain_slope.bind(after))
-	undo_redo.add_undo_method(_set_terrain_slope.bind(before))
-	undo_redo.commit_action(false)
+	session.submit_terrain_action("切换斜坡地形", before, after)
 	status_label.text = "已切换为水平地面。" if after.is_zero_approx() else "斜坡演示：移动建筑会自动更新标高、基础和廊桥连接。"
 
 func _set_terrain_slope(value: Vector2) -> void:
@@ -1243,5 +1109,5 @@ func _reset_camera() -> void:
 	_update_camera()
 
 func _exit_tree() -> void:
-	undo_redo.free()
 	undo_redo = null
+	session = null

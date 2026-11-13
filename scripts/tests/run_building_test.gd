@@ -353,6 +353,49 @@ func _run() -> void:
 		Input.parse_input_event(orbit_release)
 		await process_frame
 		_check(workbench.camera_yaw != event_yaw and not workbench.orbiting, "真实输入队列应完成右键环绕并释放")
+	# 连续拖动同一建筑应经 merge_key 合并为一条历史，一次撤销回到拖动起点。
+	workbench.undo_redo.clear_history()
+	workbench._select_footprint(&"fuse_a")
+	var drag_origin: Vector2 = workbench.plan.get_footprint(&"fuse_a").polygon[0]
+	workbench._on_building_move_started(&"fuse_a")
+	workbench._on_building_moved(&"fuse_a", Vector2(0.5, 0.0))
+	workbench._on_building_move_finished(&"fuse_a")
+	workbench._on_building_move_started(&"fuse_a")
+	workbench._on_building_moved(&"fuse_a", Vector2(0.5, 0.0))
+	workbench._on_building_move_finished(&"fuse_a")
+	_check(workbench.session.history.committed_count() == 1, "连续拖动应合并为一条历史")
+	workbench.undo_redo.undo()
+	_check(workbench.plan.get_footprint(&"fuse_a").polygon[0].distance_to(drag_origin) < 0.001,
+		"一次撤销应回到连续拖动起点")
+	workbench.undo_redo.redo()
+	_check(workbench.plan.get_footprint(&"fuse_a").polygon[0].distance_to(drag_origin + Vector2(1.0, 0.0)) < 0.001,
+		"重做应恢复合并后的最终位置")
+	workbench.undo_redo.undo()
+	# 带结合点的建筑必须安全拒绝切分：不产生历史、平面不变、空历史撤销无副作用。
+	workbench.undo_redo.clear_history()
+	var guard_connector := PCGSkybridgeConnector.new()
+	guard_connector.id = &"conn_split_guard"
+	guard_connector.building_id = &"fuse_a"
+	guard_connector.edge_index = 0
+	guard_connector.edge_t = 0.5
+	guard_connector.floor = 0
+	workbench.plan.connectors.append(guard_connector)
+	workbench._sync_plan()
+	workbench._select_footprint(&"fuse_a")
+	var guard_count: int = workbench.plan.footprints.size()
+	workbench._split_selected()
+	_check(workbench.plan.footprints.size() == guard_count and String(workbench.status_label.text).contains("结合点"),
+		"带结合点建筑切分被拒绝后平面应保持不变")
+	_check(workbench.session.history.committed_count() == 0, "被拒绝的切分不应进入撤销历史")
+	workbench.undo_redo.undo()
+	_check(workbench.plan.get_footprint(&"fuse_a") != null and workbench.plan.footprints.size() == guard_count,
+		"空历史撤销不得破坏平面")
+	workbench.plan.connectors.clear()
+	workbench._sync_plan()
+	workbench._split_selected()
+	_check(workbench.plan.footprints.size() == guard_count + 1, "移除结合点后应可正常切分")
+	workbench.undo_redo.undo()
+	_check(workbench.plan.footprints.size() == guard_count, "撤销切分应恢复原平面")
 	workbench.undo_redo.clear_history()
 	workbench.queue_free()
 	result["root"].free()
