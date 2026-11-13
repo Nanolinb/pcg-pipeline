@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="PCGBuildingComponentDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/building/building_component_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"skybridge_basic"
+display_name = "标准廊桥"
+category = "连接"
+role = 10
+geometry = 11
+size = Vector3(2, 3, 1)
+frame_width = 0.1
+color = Color(0.5, 0.66, 0.72, 1)
+accent_color = Color(0.31, 0.49, 0.55, 1)
+material_id = &"building/skybridge/frame"
+accent_material_id = &"building/skybridge/railing"

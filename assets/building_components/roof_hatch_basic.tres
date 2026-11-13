@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="PCGBuildingComponentDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/building/building_component_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"roof_hatch_basic"
+display_name = "屋顶检修屋"
+category = "屋顶附属"
+role = 5
+geometry = 5
+size = Vector3(0.8, 0.48, 0.8)
+color = Color(0.39, 0.31, 0.24, 1)
+material_id = &"building/roof/hatch"

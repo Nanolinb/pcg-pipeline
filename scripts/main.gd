@@ -188,6 +188,11 @@ func _build_ui() -> void:
 	reset_button.text = "重置视角 (F)"
 	reset_button.pressed.connect(_reset_camera)
 	library_box.add_child(reset_button)
+	var building_button := Button.new()
+	building_button.text = "打开建筑平面工作台"
+	building_button.focus_mode = Control.FOCUS_NONE
+	building_button.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/building_workbench.tscn"))
+	library_box.add_child(building_button)
 
 	var inspector_panel := PanelContainer.new()
 	inspector_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)

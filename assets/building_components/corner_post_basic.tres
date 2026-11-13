@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="PCGBuildingComponentDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/building/building_component_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"corner_post_basic"
+display_name = "墙角立柱"
+category = "结构"
+role = 3
+geometry = 0
+size = Vector3(0.16, 1.0, 0.16)
+color = Color(0.48, 0.4, 0.31, 1)
+material_id = &"building/structure/corner"

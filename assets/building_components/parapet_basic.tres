@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="PCGBuildingComponentDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/building/building_component_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"parapet_basic"
+display_name = "屋顶女儿墙"
+category = "屋顶收边"
+role = 2
+geometry = 3
+size = Vector3(1.0, 0.42, 0.16)
+color = Color(0.64, 0.54, 0.42, 1)
+material_id = &"building/roof/parapet"
