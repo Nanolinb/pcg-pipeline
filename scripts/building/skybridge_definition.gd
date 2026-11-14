@@ -31,11 +31,18 @@ func validation_errors() -> PackedStringArray:
 		errors.append("廊桥 %s 至少需要两个路径节点。" % id)
 	return errors
 
+# 规范化快照/会话补丁里 Vector3 可能以数组形式存在，读取时统一还原。
+static func _vec(value) -> Vector3:
+	if value is Vector3:
+		return value
+	if value is Array and value.size() >= 3:
+		return Vector3(float(value[0]), float(value[1]), float(value[2]))
+	return Vector3.ZERO
+
 func node_positions() -> Array[Vector3]:
 	var result: Array[Vector3] = []
 	for node in nodes:
-		var position: Vector3 = node.get("position", Vector3.ZERO)
-		result.append(position + Vector3(0.0, auto_lift, 0.0))
+		result.append(_vec(node.get("position", Vector3.ZERO)) + Vector3(0.0, auto_lift, 0.0))
 	return result
 
 func set_node_position(index: int, position: Vector3) -> void:
@@ -59,7 +66,7 @@ func set_node_tension(index: int, tension: float) -> void:
 func node_handle(index: int, kind: StringName) -> Vector3:
 	if index < 0 or index >= nodes.size():
 		return Vector3.ZERO
-	return nodes[index].get(kind, Vector3.ZERO)
+	return _vec(nodes[index].get(kind, Vector3.ZERO))
 
 func has_node_handle(index: int, kind: StringName) -> bool:
 	return index >= 0 and index < nodes.size() and nodes[index].has(kind)
@@ -77,8 +84,8 @@ func insert_node_near(position: Vector3, segments_per_span: int = 8) -> int:
 	var best_point := Vector3.ZERO
 	var best_distance := INF
 	for span in nodes.size() - 1:
-		var a: Vector3 = nodes[span].get("position", Vector3.ZERO)
-		var b: Vector3 = nodes[span + 1].get("position", Vector3.ZERO)
+		var a := _vec(nodes[span].get("position", Vector3.ZERO))
+		var b := _vec(nodes[span + 1].get("position", Vector3.ZERO))
 		var ab := b - a
 		var length_sq := maxf(ab.length_squared(), 0.000001)
 		var u := clampf((position - a).dot(ab) / length_sq, 0.0, 1.0)

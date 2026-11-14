@@ -182,6 +182,50 @@ func _test_node_editing() -> void:
 	_check(inserted == 2 and bridge.nodes.size() == 4, "应在最近跨度插入新节点")
 	_check(not bridge.remove_node(0) and not bridge.remove_node(3), "连接结合点的端点不可删除")
 	_check(bridge.remove_node(1) and bridge.nodes.size() == 3, "内部节点应可删除")
+	# 规范化补丁/快照中的数组必须还原为 Vector3，否则节点拖拽、采样与主视图编辑全部失效。
+	var normalized := {
+		"position": [0.0, 2.6, 0.0], "tension": 1.0,
+		"in": [0.0, 0.0, 0.0], "out": [1.0, 0.5, 2.0],
+	}
+	var restored := PCGSkybridgeDefinition.new()
+	restored.nodes = [normalized, {"position": Vector3(4, 2.6, 0), "tension": 1.0}]
+	_check(restored.node_handle(0, &"out") is Vector3, "数组手柄必须还原为 Vector3")
+	_check(restored.sampled_path(8).size() > 0, "数组手柄下曲线采样不应报错")
+	_check(restored.node_positions()[0] == Vector3(0, 2.6, 0), "数组位置应还原为 Vector3")
+	var plan2 := PCGBuildingPlan.demo()
+	var session := BuildingPlanSession.new(plan2, func(_c, _a): pass)
+	var session_bridge := PCGSkybridgeDefinition.new()
+	session_bridge.id = &"b1"
+	session_bridge.connector_a = &"a"
+	session_bridge.connector_b = &"b"
+	session_bridge.nodes = [
+		{"position": Vector3.ZERO, "tension": 1.0},
+		{"position": Vector3(4, 0, 0), "tension": 1.0},
+	]
+	plan2.skybridges.append(session_bridge)
+	var before := {
+		"nodes": session_bridge.nodes.duplicate(true),
+		"auto_lift": 0.0, "width": 2.0, "height": 3.0, "color": session_bridge.color,
+	}
+	var after := before.duplicate(true)
+	after["nodes"] = [
+		{"position": Vector3(1, 2, 3), "tension": 1.0, "out": Vector3(0.5, 1.0, 0.0)},
+		{"position": Vector3(4, 0, 0), "tension": 1.0},
+	]
+	session.submit_bridge_action("编辑廊桥手柄", &"b1", before, after)
+	_check(plan2.get_skybridge(&"b1").nodes[0]["out"] is Vector3
+		and plan2.get_skybridge(&"b1").nodes[0]["position"] == Vector3(1, 2, 3),
+		"提交编辑应还原规范化后的节点位置与手柄")
+	session.undo()
+	_check(not plan2.get_skybridge(&"b1").nodes[0].has("out")
+		and plan2.get_skybridge(&"b1").nodes[0]["position"] == Vector3.ZERO,
+		"撤销应恢复编辑前节点")
+	session.redo()
+	_check(plan2.get_skybridge(&"b1").nodes[0]["out"] is Vector3,
+		"重做应把手柄数组还原为 Vector3")
+	_check(plan2.get_skybridge(&"b1").sampled_path(8).size() > 0,
+		"重做后曲线采样不应报错")
+	session.history.dispose()
 	bridge.auto_lift = 1.5
 	_check(is_equal_approx(bridge.node_positions()[0].y, 4.1), "自动错开抬升应叠加到节点高度")
 	_check(bridge.semantic_data()["nodes"].size() == 3, "语义数据应包含全部节点")
@@ -506,8 +550,8 @@ func _total_windows(building: Node3D) -> int:
 	return count
 
 func _finish() -> void:
-	if checks != 105:
-		failures.append("实际执行检查数 %d 与预期 105 不符，可能存在脚本错误中断了测试" % checks)
+	if checks != 112:
+		failures.append("实际执行检查数 %d 与预期 112 不符，可能存在脚本错误中断了测试" % checks)
 	if failures.is_empty():
 		print("SKYBRIDGE_TEST_RESULT: PASS checks=%d" % checks)
 		quit(0)

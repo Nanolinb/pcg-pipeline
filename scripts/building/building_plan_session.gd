@@ -123,6 +123,11 @@ func _apply_bridge_patch(id: StringName, patch: Dictionary) -> void:
 		if restored.get("position") is Array:
 			var position: Array = restored["position"]
 			restored["position"] = Vector3(float(position[0]), float(position[1]), float(position[2]))
+		# 规范化补丁中 in/out 手柄也是数组，必须同样还原为 Vector3，否则拖拽/采样全部报错。
+		for kind in [&"in", &"out"]:
+			if restored.get(kind) is Array:
+				var handle: Array = restored[kind]
+				restored[kind] = Vector3(float(handle[0]), float(handle[1]), float(handle[2]))
 		nodes.append(restored)
 	bridge.nodes = nodes
 	bridge.auto_lift = float(patch["auto_lift"])
