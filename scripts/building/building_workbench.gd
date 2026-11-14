@@ -216,6 +216,13 @@ func _build_ui() -> void:
 	_mode_button(left, "模式：减少节点", PCGBuildingPlanEditor.InteractionMode.BRIDGE_REMOVE,
 		"减少节点模式：点击内部节点删除该节点；点击起点或终点则删除整条廊桥及其两端入口（可撤销）。")
 	_mode_buttons[PCGBuildingPlanEditor.InteractionMode.FOOTPRINT].set_pressed_no_signal(true)
+	var gizmo_toggle := CheckBox.new()
+	gizmo_toggle.text = "显示主视图手柄"
+	gizmo_toggle.tooltip_text = "显示或隐藏主视图中的横截面与贝塞尔手柄，默认勾选。"
+	gizmo_toggle.button_pressed = true
+	gizmo_toggle.focus_mode = Control.FOCUS_NONE
+	gizmo_toggle.toggled.connect(_on_gizmo_toggle)
+	left.add_child(gizmo_toggle)
 	connector_floor_spin = _spin_row(left, "结合点楼层", 0.0, 11.0, 1.0)
 	connector_floor_spin.value = 1.0
 	connector_floor_spin.value_changed.connect(_on_connector_floor_changed)
@@ -1210,7 +1217,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
-				if not _over_ui(event.position):
+				if not _over_ui(event.position) and gizmos.visible:
 					var hit := gizmos.pick(event.position)
 					if not hit.is_empty():
 						_main_drag = hit
@@ -1244,6 +1251,10 @@ func _over_ui(position: Vector2) -> bool:
 	if detail_plan_editor != null and detail_plan_editor.get_global_rect().has_point(position):
 		return true
 	return false
+
+func _on_gizmo_toggle(pressed: bool) -> void:
+	if gizmos != null:
+		gizmos.visible = pressed
 
 func _drag_main(screen_position: Vector2) -> void:
 	var value := gizmos.drag_value(_main_drag, screen_position)

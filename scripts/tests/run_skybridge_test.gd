@@ -375,6 +375,10 @@ func _test_workbench_integration() -> void:
 	workbench.undo_redo.undo()
 	_check(workbench.plan.get_skybridge(&"bridge_demo") != null, "撤销终结点删除应恢复廊桥")
 	_check(workbench.gizmos.grips.size() > 0, "主视图应生成截面与贝塞尔手柄")
+	workbench._on_gizmo_toggle(false)
+	_check(not workbench.gizmos.visible, "取消勾选手柄开关应隐藏主视图手柄")
+	workbench._on_gizmo_toggle(true)
+	_check(workbench.gizmos.visible, "勾选手柄开关应重新显示主视图手柄")
 	var first_grip: Dictionary = workbench.gizmos.grips[0]
 	var grip_screen: Vector2 = workbench.camera.unproject_position(first_grip["position"])
 	var picked: Dictionary = workbench.gizmos.pick(grip_screen)
@@ -502,8 +506,8 @@ func _total_windows(building: Node3D) -> int:
 	return count
 
 func _finish() -> void:
-	if checks != 103:
-		failures.append("实际执行检查数 %d 与预期 103 不符，可能存在脚本错误中断了测试" % checks)
+	if checks != 105:
+		failures.append("实际执行检查数 %d 与预期 105 不符，可能存在脚本错误中断了测试" % checks)
 	if failures.is_empty():
 		print("SKYBRIDGE_TEST_RESULT: PASS checks=%d" % checks)
 		quit(0)
