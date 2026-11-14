@@ -65,6 +65,7 @@ var session: BuildingPlanSession
 var undo_redo: PCGEditCommandHistory
 var _drag_before: Dictionary = {}
 var _bridge_drag_before: Dictionary = {}
+var _section_drag_before: Dictionary = {}
 var _last_param_snapshot: Dictionary = {}
 var _skybridge_digest: String = ""
 var _mode_buttons: Dictionary = {}
@@ -202,7 +203,7 @@ func _build_ui() -> void:
 	_mode_button(left, "模式：标注结合点", PCGBuildingPlanEditor.InteractionMode.CONNECTOR,
 		"结合点模式：点击建筑立面边缘放置廊桥结合点；点击已有结合点选中后，可用下方“结合点楼层”修改其楼层。")
 	_mode_button(left, "模式：桥节点编辑", PCGBuildingPlanEditor.InteractionMode.BRIDGE_NODE,
-		"桥节点模式：拖动路径节点或贝塞尔手柄改变走向与弧度；选中节点后可在右侧面板调转弯强度和桥面高度。")
+		"桥节点模式：拖动路径节点或贝塞尔手柄改变走向与弧度；拖动桥中点的宽度/高度（H）手柄可直接调整横截面（底板基准不变）。")
 	_mode_button(left, "模式：增加节点", PCGBuildingPlanEditor.InteractionMode.BRIDGE_ADD,
 		"增加节点模式：点击桥曲线即在最近位置插入一个节点；按钮保持高亮，可连续添加。")
 	_mode_button(left, "模式：减少节点", PCGBuildingPlanEditor.InteractionMode.BRIDGE_REMOVE,
@@ -290,6 +291,9 @@ func _make_plan_editor() -> PCGBuildingPlanEditor:
 	editor.bridge_node_insert_requested.connect(_on_bridge_node_insert)
 	editor.bridge_node_remove_requested.connect(_on_bridge_node_remove)
 	editor.bridge_handle_moved.connect(_on_bridge_handle_moved)
+	editor.bridge_section_started.connect(_on_bridge_section_started)
+	editor.bridge_section_changed.connect(_on_bridge_section_changed)
+	editor.bridge_section_finished.connect(_on_bridge_section_finished)
 	editor.zoom_changed.connect(_on_detail_zoom_changed)
 	return editor
 
@@ -731,6 +735,35 @@ func _on_bridge_handle_moved(bridge_id: StringName, node_index: int, kind: Strin
 	plan_editor.set_plan(plan)
 	if detail_plan_editor != null:
 		detail_plan_editor.set_plan(plan)
+
+func _on_bridge_section_started(bridge_id: StringName) -> void:
+	var bridge := plan.get_skybridge(bridge_id)
+	_section_drag_before = _bridge_snapshot(bridge) if bridge != null else {}
+
+func _on_bridge_section_changed(bridge_id: StringName, kind: StringName, value: float) -> void:
+	var bridge := plan.get_skybridge(bridge_id)
+	if bridge == null:
+		return
+	if kind == &"width":
+		bridge.width = value
+	else:
+		bridge.height = value
+	_sync_skybridges()
+	plan_editor.set_plan(plan)
+	if detail_plan_editor != null:
+		detail_plan_editor.set_plan(plan)
+
+func _on_bridge_section_finished(bridge_id: StringName) -> void:
+	var bridge := plan.get_skybridge(bridge_id)
+	if bridge == null or _section_drag_before.is_empty():
+		_section_drag_before = {}
+		return
+	var after := _bridge_snapshot(bridge)
+	_register_bridge_action("调整廊桥截面", bridge_id, _section_drag_before, after,
+		&"drag_bridge_section:%s" % bridge_id)
+	_section_drag_before = {}
+	status_label.text = "廊桥 %s 截面已调整为 %.1f m 宽 × %.1f m 高（以底板为基准）。" % [
+		bridge_id, bridge.width, bridge.height]
 
 func _on_tension_changed(value: float) -> void:
 	var bridge := plan.get_skybridge(selected_bridge_id)

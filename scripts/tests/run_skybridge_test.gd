@@ -75,6 +75,17 @@ func _test_connector_and_bridge_creation(generator: PCGSkybridgeGenerator, catal
 				plan.get_footprint(&"house_tower").wall_color, 0.5)),
 		"廊桥配色应取两端建筑墙色的中间色")
 	_check(int(bridge_visual.get_meta("portal_count")) == 2, "廊桥两端应各生成一个立面门户框")
+	var base_aabb := bridge_visual.mesh.get_aabb()
+	bridge.width = 3.0
+	bridge.height = 4.0
+	var resized := generator.build_network(plan, catalog)
+	var resized_visual: MeshInstance3D = resized["root"].get_child(0)
+	var resized_aabb := resized_visual.mesh.get_aabb()
+	_check(resized_aabb.size.z > base_aabb.size.z + 0.8, "加宽后桥身网格应随之变宽")
+	_check(resized_aabb.size.y > 3.8 and resized_aabb.size.y < 4.4, "加高后桥身网格应随之变高")
+	resized["root"].free()
+	bridge.width = 2.0
+	bridge.height = 3.0
 	result["root"].free()
 
 func _test_window_avoidance(catalog: PCGBuildingComponentCatalog) -> void:
@@ -320,6 +331,17 @@ func _test_workbench_integration() -> void:
 		"端点高度调整应换算为楼层写回结合点")
 	_check(is_equal_approx(workbench.plan.get_skybridge(&"bridge_demo").node_positions()[0].y, 7.8),
 		"桥端点应随高度调整升到新楼层")
+	workbench._on_bridge_section_started(&"bridge_demo")
+	workbench._on_bridge_section_changed(&"bridge_demo", &"width", 3.0)
+	workbench._on_bridge_section_changed(&"bridge_demo", &"height", 4.0)
+	workbench._on_bridge_section_finished(&"bridge_demo")
+	_check(is_equal_approx(workbench.plan.get_skybridge(&"bridge_demo").width, 3.0),
+		"截面宽度调整应写入桥数据")
+	_check(is_equal_approx(workbench.plan.get_skybridge(&"bridge_demo").height, 4.0),
+		"截面高度调整应写入桥数据")
+	workbench.undo_redo.undo()
+	_check(is_equal_approx(workbench.plan.get_skybridge(&"bridge_demo").width, 2.0),
+		"撤销应恢复调整前的截面尺寸")
 	workbench.undo_redo.clear_history()
 	workbench.queue_free()
 	await process_frame
@@ -395,8 +417,8 @@ func _total_windows(building: Node3D) -> int:
 	return count
 
 func _finish() -> void:
-	if checks != 83:
-		failures.append("实际执行检查数 %d 与预期 83 不符，可能存在脚本错误中断了测试" % checks)
+	if checks != 88:
+		failures.append("实际执行检查数 %d 与预期 88 不符，可能存在脚本错误中断了测试" % checks)
 	if failures.is_empty():
 		print("SKYBRIDGE_TEST_RESULT: PASS checks=%d" % checks)
 		quit(0)

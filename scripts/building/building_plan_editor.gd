@@ -17,6 +17,9 @@ signal bridge_node_drag_finished(bridge_id: StringName)
 signal bridge_node_insert_requested(bridge_id: StringName, position: Vector3)
 signal bridge_node_remove_requested(bridge_id: StringName, node_index: int)
 signal bridge_handle_moved(bridge_id: StringName, node_index: int, kind: StringName, offset: Vector3)
+signal bridge_section_started(bridge_id: StringName)
+signal bridge_section_changed(bridge_id: StringName, kind: StringName, value: float)
+signal bridge_section_finished(bridge_id: StringName)
 signal zoom_changed(value: float)
 
 enum InteractionMode { FOOTPRINT, CONNECTOR, BRIDGE_NODE, BRIDGE_ADD, BRIDGE_REMOVE }
@@ -36,6 +39,9 @@ var _drag_vertex: int = -1
 var _drag_bridge: StringName = &""
 var _drag_node: int = -1
 var _drag_handle: StringName = &""
+var _drag_section_kind: StringName = &""
+var _section_start := Vector2.ZERO
+var _section_drag_accum := 0.0
 var _drag_building := false
 var _last_building_world := Vector2.ZERO
 var _pan_offset := Vector2.ZERO
@@ -148,6 +154,10 @@ func _gui_input(event: InputEvent) -> void:
 				queue_redraw()
 		else:
 			if event.button_index == MOUSE_BUTTON_LEFT:
+				if _drag_section_kind != &"":
+					bridge_section_finished.emit(_drag_bridge)
+					_drag_bridge = &""
+					_drag_section_kind = &""
 				if _drag_vertex >= 0:
 					vertex_drag_finished.emit(_drag_id)
 					_drag_id = &""
@@ -164,7 +174,29 @@ func _gui_input(event: InputEvent) -> void:
 			_panning = false
 		accept_event()
 	elif event is InputEventMouseMotion:
-		if _drag_vertex >= 0:
+		if _drag_section_kind != &"":
+			var section_bridge := plan.get_skybridge(_drag_bridge)
+			if section_bridge != null:
+				if _drag_section_kind == &"width":
+					var section := _section_mid_data(section_bridge)
+					if not section.is_empty():
+						var point := screen_to_world(event.position)
+						var world := Vector3(point.x, 0.0, point.y)
+						var center: Vector3 = section["position"]
+						var right: Vector3 = section["right"]
+						var half := (world - Vector3(center.x, 0.0, center.z)).dot(
+							Vector3(right.x, 0.0, right.z))
+						var width := snappedf(clampf(absf(half) * 2.0, 0.8, 8.0), 0.1)
+						bridge_section_changed.emit(_drag_bridge, &"width", width)
+				else:
+					# 高度在顶视图中用屏幕纵向拖拽：上拉加高、下拉降低。
+					_section_drag_accum += -event.relative.y / maxf(_pixels_per_meter(), 1.0) * 0.75
+					var height := snappedf(
+						clampf(section_bridge.height + _section_drag_accum, 1.6, 8.0), 0.05)
+					_section_drag_accum = height - section_bridge.height
+					bridge_section_changed.emit(_drag_bridge, &"height", height)
+				queue_redraw()
+		elif _drag_vertex >= 0:
 			var footprint := plan.get_footprint(_drag_id)
 			if footprint != null:
 				var point := screen_to_world(event.position)
@@ -251,6 +283,16 @@ func _pick_connector(position: Vector2) -> Dictionary:
 	return {}
 
 func _handle_node_click(position: Vector2) -> void:
+	var section_hit := _pick_section_grip(position)
+	if not section_hit.is_empty():
+		selected_bridge_id = section_hit["bridge"]
+		_drag_bridge = selected_bridge_id
+		_drag_section_kind = section_hit["kind"]
+		_section_start = position
+		_section_drag_accum = 0.0
+		bridge_section_started.emit(selected_bridge_id)
+		queue_redraw()
+		return
 	var node_hit := _pick_bridge_node(position)
 	if not node_hit.is_empty():
 		selected_bridge_id = node_hit["bridge"]
@@ -261,6 +303,50 @@ func _handle_node_click(position: Vector2) -> void:
 		bridge_node_selected.emit(selected_bridge_id, selected_node_index)
 	else:
 		_panning = true
+
+# 桥中点横截面手柄：宽度端点（沿桥横向）与高度 H 手柄（屏幕纵向拖拽）。
+func _pick_section_grip(position: Vector2) -> Dictionary:
+	for bridge in plan.skybridges:
+		if bridge == null or bridge.nodes.size() < 2:
+			continue
+		var section := _section_mid_data(bridge)
+		if section.is_empty():
+			continue
+		var center: Vector3 = section["position"]
+		var center_screen := world_to_screen(Vector2(center.x, center.z))
+		for side in [-1.0, 1.0]:
+			var grip: Vector3 = center + section["right"] * (bridge.width * 0.5) * side
+			var grip_screen := world_to_screen(Vector2(grip.x, grip.z))
+			if grip_screen.distance_to(position) <= NODE_PICK_RADIUS:
+				return {"bridge": bridge.id, "kind": &"width"}
+		var height_screen := center_screen + Vector2(16.0, -16.0)
+		if height_screen.distance_to(position) <= NODE_PICK_RADIUS:
+			return {"bridge": bridge.id, "kind": &"height"}
+	return {}
+
+# 截面中点数据：按弧长取路径中点与局部坐标架。
+func _section_mid_data(bridge: PCGSkybridgeDefinition) -> Dictionary:
+	var path := bridge.sampled_path(8)
+	if path.size() < 2:
+		return {}
+	var total := 0.0
+	var distances: Array[float] = [0.0]
+	for index in range(1, path.size()):
+		total += path[index].distance_to(path[index - 1])
+		distances.append(total)
+	var half := total * 0.5
+	for index in range(1, path.size()):
+		if distances[index] >= half or index == path.size() - 1:
+			var segment := distances[index] - distances[index - 1]
+			var u := 0.0 if segment <= 0.0001 else clampf((half - distances[index - 1]) / segment, 0.0, 1.0)
+			var position := path[index - 1].lerp(path[index], u)
+			var forward := path[index] - path[index - 1]
+			if forward.length() < 0.0001:
+				forward = Vector3.FORWARD
+			forward = forward.normalized()
+			var right := Vector3.UP.cross(forward).normalized()
+			return {"position": position, "right": right, "up": forward.cross(right).normalized()}
+	return {}
 
 func _handle_add_click(position: Vector2) -> void:
 	var curve_hit := _pick_curve_point(position)
@@ -446,7 +532,36 @@ func _draw_skybridges() -> void:
 			var label_at := world_to_screen(Vector2(positions[0].x, positions[0].z))
 			draw_string(font, label_at + Vector2(10, 14), String(bridge.id),
 				HORIZONTAL_ALIGNMENT_LEFT, -1.0, 11, color.lightened(0.3))
+		_draw_section_grips(bridge, selected)
 		if absf(bridge.auto_lift) > 0.001:
 			var lift_at := world_to_screen(Vector2(positions[0].x, positions[0].z))
 			draw_string(font, lift_at + Vector2(10, 26), "自动错开 %+0.2fm" % bridge.auto_lift,
 				HORIZONTAL_ALIGNMENT_LEFT, -1.0, 10, Color("e8c47f"))
+
+# 中点横截面手柄：桥面基准线（两端宽度握把）+ 高度 H 握把（屏幕纵向拖动）。
+func _draw_section_grips(bridge: PCGSkybridgeDefinition, selected: bool) -> void:
+	if bridge.nodes.size() < 2:
+		return
+	var section := _section_mid_data(bridge)
+	if section.is_empty():
+		return
+	var font := get_theme_default_font()
+	var center: Vector3 = section["position"]
+	var right: Vector3 = section["right"]
+	var center_screen := world_to_screen(Vector2(center.x, center.z))
+	var grip_color := Color("6fd3c7") if not selected else Color("9fe8df")
+	var left_grip: Vector3 = center - right * (bridge.width * 0.5)
+	var right_grip: Vector3 = center + right * (bridge.width * 0.5)
+	draw_line(world_to_screen(Vector2(left_grip.x, left_grip.z)),
+		world_to_screen(Vector2(right_grip.x, right_grip.z)),
+		grip_color.darkened(0.2), 2.0 if selected else 1.5)
+	for grip in [left_grip, right_grip]:
+		var grip_screen := world_to_screen(Vector2(grip.x, grip.z))
+		var rect := Rect2(grip_screen - Vector2(4.5, 4.5), Vector2(9.0, 9.0))
+		draw_rect(rect, grip_color)
+		draw_rect(rect, Color("123c38"), false, 1.0)
+	var height_screen := center_screen + Vector2(16.0, -16.0)
+	draw_line(center_screen, height_screen, grip_color.darkened(0.3), 1.0)
+	draw_circle(height_screen, 5.5, Color("e8c47f"))
+	draw_string(font, height_screen + Vector2(7, -7), "H", HORIZONTAL_ALIGNMENT_LEFT, -1.0, 11,
+		Color("ffe3a3"))

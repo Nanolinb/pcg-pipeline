@@ -40,16 +40,22 @@ func make_bridge(plan: PCGBuildingPlan, first: PCGSkybridgeConnector,
 	bridge.connector_b = second.id
 	bridge.width = maxf(first.width, 1.0)
 	bridge.height = maxf(first.height, 2.0)
-	var component := bridge_component(bridge, catalog)
-	bridge.width = component.size.x
-	bridge.height = component.size.y
+	var raw: PCGBuildingComponentDefinition = null
+	if catalog != null:
+		raw = catalog.get_definition(bridge.component_id)
+	if raw != null:
+		bridge.width = raw.size.x
+		bridge.height = raw.size.y
+	else:
+		bridge.width = maxf(first.width, 1.0)
+		bridge.height = maxf(first.height, 2.0)
 	# 配色与两端建筑保持一致：取两栋墙色的中间色，顶棚/立柱/扶手由生成器派生同色系深浅。
 	var footprint_a := plan.get_footprint(first.building_id)
 	var footprint_b := plan.get_footprint(second.building_id)
 	if footprint_a != null and footprint_b != null:
 		bridge.color = footprint_a.wall_color.lerp(footprint_b.wall_color, 0.5)
 	else:
-		bridge.color = component.color
+		bridge.color = raw.color if raw != null else bridge.color
 	bridge.nodes = [
 		{"position": pa, "tension": 1.0},
 		{"position": (pa + pb) * 0.5, "tension": 1.0},
@@ -60,13 +66,17 @@ func make_bridge(plan: PCGBuildingPlan, first: PCGSkybridgeConnector,
 # 廊桥使用的标准组件；未提供目录或找不到组件时回退到桥定义自带的尺寸。
 func bridge_component(bridge: PCGSkybridgeDefinition,
 			catalog: PCGBuildingComponentCatalog) -> PCGBuildingComponentDefinition:
+	var component: PCGBuildingComponentDefinition = null
 	if catalog != null:
-		var component: PCGBuildingComponentDefinition = catalog.get_definition(bridge.component_id)
-		if component != null:
-			return component
-	var fallback := Component.new()
-	fallback.size = Vector3(bridge.width, bridge.height, 1.0)
-	return fallback
+		component = catalog.get_definition(bridge.component_id)
+	if component == null:
+		component = Component.new()
+		component.size = Vector3(bridge.width, bridge.height, 1.0)
+		return component
+	# 按桥定义的宽高缩放截面：比例/材质/分组取组件，实际尺寸以桥数据为准（底板为 Y=0 基准）。
+	var sized := component.duplicate() as PCGBuildingComponentDefinition
+	sized.size = Vector3(bridge.width, bridge.height, 1.0)
+	return sized
 
 # 交叉求解（编辑/求解阶段调用）：先清零 auto_lift，再按当前路径重新计算合并与错开。
 # build_network 不再修改生成数据，保证重复构建的语义摘要与求解结果一致。
