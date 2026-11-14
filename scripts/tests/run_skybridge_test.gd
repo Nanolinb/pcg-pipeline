@@ -361,6 +361,14 @@ func _test_workbench_integration() -> void:
 		var drag: Dictionary = workbench.gizmos.drag_value(handle_grip,
 			workbench.camera.unproject_position(handle_grip["position"]))
 		_check(drag.has("offset"), "贝塞尔手柄拖拽应返回偏移向量")
+		var base_offset: Vector3 = handle_grip["position"] - handle_grip["meta"]["node"]
+		var handle_screen: Vector2 = workbench.camera.unproject_position(handle_grip["position"])
+		var lower: Dictionary = workbench.gizmos.drag_value(handle_grip, handle_screen + Vector2(0, 50))
+		_check(lower.has("offset") and absf(lower["offset"].y) > 0.001,
+			"主视图贝塞尔手柄应支持垂直方向弯曲")
+		_check(lower.has("offset") and is_equal_approx(lower["offset"].x, base_offset.x)
+			and is_equal_approx(lower["offset"].z, base_offset.z),
+			"垂直拖拽应保持手柄水平分量不变")
 	else:
 		_check(false, "应存在贝塞尔手柄握把")
 	var section_grip := {}
@@ -466,8 +474,8 @@ func _total_windows(building: Node3D) -> int:
 	return count
 
 func _finish() -> void:
-	if checks != 98:
-		failures.append("实际执行检查数 %d 与预期 98 不符，可能存在脚本错误中断了测试" % checks)
+	if checks != 100:
+		failures.append("实际执行检查数 %d 与预期 100 不符，可能存在脚本错误中断了测试" % checks)
 	if failures.is_empty():
 		print("SKYBRIDGE_TEST_RESULT: PASS checks=%d" % checks)
 		quit(0)

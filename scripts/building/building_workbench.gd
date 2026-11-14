@@ -210,7 +210,7 @@ func _build_ui() -> void:
 	_mode_button(left, "模式：标注结合点", PCGBuildingPlanEditor.InteractionMode.CONNECTOR,
 		"结合点模式：点击建筑立面边缘放置廊桥结合点；点击已有结合点选中后，可用下方“结合点楼层”修改其楼层。")
 	_mode_button(left, "模式：桥节点编辑", PCGBuildingPlanEditor.InteractionMode.BRIDGE_NODE,
-		"桥节点模式：拖动路径节点或贝塞尔手柄改变走向与弧度；拖动桥中点的宽度/高度（H）手柄可直接调整横截面（底板基准不变）。")
+		"桥节点模式：顶视图拖动节点/手柄调水平弯曲；主视图拖贝塞尔手柄调垂直弯曲，拖中点截面框调宽高（底板基准不变）。")
 	_mode_button(left, "模式：增加节点", PCGBuildingPlanEditor.InteractionMode.BRIDGE_ADD,
 		"增加节点模式：点击桥曲线即在最近位置插入一个节点；按钮保持高亮，可连续添加。")
 	_mode_button(left, "模式：减少节点", PCGBuildingPlanEditor.InteractionMode.BRIDGE_REMOVE,

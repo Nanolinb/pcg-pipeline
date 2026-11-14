@@ -82,7 +82,7 @@ func pick(screen_position: Vector2) -> Dictionary:
 			best = grip
 	return best
 
-# 拖拽换算：handle 返回 {"offset": Vector3}；width/height 返回对应数值。
+# 拖拽换算：handle 返回 {"offset": Vector3}（主视图只调垂直弯曲，水平分量保持不变）；width/height 返回对应数值。
 func drag_value(grip: Dictionary, screen_position: Vector2) -> Dictionary:
 	if camera == null:
 		return {}
@@ -92,9 +92,17 @@ func drag_value(grip: Dictionary, screen_position: Vector2) -> Dictionary:
 	var kind: String = grip["kind"]
 	if kind == "handle":
 		var node: Vector3 = meta["node"]
-		var hit: Variant = Plane(Vector3.UP, node.y).intersects_ray(origin, direction)
+		# 竖直面：沿手柄水平方向与 Y 轴张成，只改手柄的垂直分量。
+		var offset_dir: Vector3 = grip["position"] - node
+		offset_dir.y = 0.0
+		if offset_dir.length() < 0.001:
+			offset_dir = Vector3.FORWARD
+		offset_dir = offset_dir.normalized()
+		var hit: Variant = Plane(offset_dir, offset_dir.dot(node)).intersects_ray(origin, direction)
 		if hit != null:
-			return {"offset": hit - node}
+			var offset: Vector3 = grip["position"] - node
+			offset.y = hit.y - node.y
+			return {"offset": offset}
 	elif kind == "width":
 		var center: Vector3 = meta["center"]
 		var right: Vector3 = meta["right"]
