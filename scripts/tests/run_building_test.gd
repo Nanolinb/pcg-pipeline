@@ -337,8 +337,21 @@ func _run() -> void:
 	workbench._input(orbit_release)
 	_check(workbench.camera_yaw != old_yaw and workbench.camera_pitch != old_pitch, "顶视图外右键拖动应环绕三维相机")
 	_check(not workbench.orbiting, "右键释放后应结束三维环绕")
+	var target_before: Vector3 = workbench.camera_target
+	orbit_press.button_index = MOUSE_BUTTON_MIDDLE
+	orbit_press.pressed = true
+	workbench._input(orbit_press)
+	orbit_motion.position = Vector2(740.0, 540.0)
+	workbench._input(orbit_motion)
+	orbit_release.button_index = MOUSE_BUTTON_MIDDLE
+	orbit_release.pressed = false
+	workbench._input(orbit_release)
+	_check(workbench.camera_target.distance_to(target_before) > 0.01, "主视图中键拖动应平移相机目标点")
+	_check(not workbench.camera_panning, "中键释放后应结束主视图平移")
 	if DisplayServer.get_name() != "headless":
 		var event_yaw: float = workbench.camera_yaw
+		orbit_press.button_index = MOUSE_BUTTON_RIGHT
+		orbit_release.button_index = MOUSE_BUTTON_RIGHT
 		orbit_press.position = Vector2(700.0, 500.0)
 		orbit_press.global_position = orbit_press.position
 		Input.parse_input_event(orbit_press)
@@ -353,6 +366,23 @@ func _run() -> void:
 		Input.parse_input_event(orbit_release)
 		await process_frame
 		_check(workbench.camera_yaw != event_yaw and not workbench.orbiting, "真实输入队列应完成右键环绕并释放")
+		var event_target: Vector3 = workbench.camera_target
+		orbit_press.button_index = MOUSE_BUTTON_MIDDLE
+		orbit_press.pressed = true
+		Input.parse_input_event(orbit_press)
+		await process_frame
+		orbit_motion.position = Vector2(760.0, 540.0)
+		orbit_motion.global_position = orbit_motion.position
+		orbit_motion.button_mask = MOUSE_BUTTON_MASK_MIDDLE
+		Input.parse_input_event(orbit_motion)
+		await process_frame
+		orbit_release.button_index = MOUSE_BUTTON_MIDDLE
+		orbit_release.pressed = false
+		orbit_release.position = orbit_motion.position
+		orbit_release.global_position = orbit_motion.position
+		Input.parse_input_event(orbit_release)
+		await process_frame
+		_check(workbench.camera_target.distance_to(event_target) > 0.01 and not workbench.camera_panning, "真实输入队列应完成中键平移并释放")
 	# 连续拖动同一建筑应经 merge_key 合并为一条历史，一次撤销回到拖动起点。
 	workbench.undo_redo.clear_history()
 	workbench._select_footprint(&"fuse_a")

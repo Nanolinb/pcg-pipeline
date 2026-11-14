@@ -58,6 +58,12 @@ func clear_history() -> void:
 	committed.clear()
 	undo_redo.clear_history()
 
+func dispose() -> void:
+	clear_history()
+	if is_instance_valid(undo_redo) and not (undo_redo is RefCounted):
+		undo_redo.free()
+	undo_redo = null
+
 func _can_merge(command: PCGEditCommand) -> bool:
 	return (_pending_merge != null
 		and command.merge_key != &""

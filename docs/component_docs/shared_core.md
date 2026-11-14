@@ -11,6 +11,9 @@
 
 ## 修改记录
 
+### 2026-11-14 · 编辑历史释放
+- 新增 `PCGEditCommandHistory.dispose()`，清空历史并释放内部非 RefCounted UndoRedo，避免工作台退出泄漏。
+
 ### 2026-10-29 · BASE-05 共享内核 Spike 与 BASE-06 契约评审
 - 建立共享载体与 `docs/core_contracts.md` 公共契约。
 

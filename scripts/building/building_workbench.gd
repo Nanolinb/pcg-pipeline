@@ -42,7 +42,9 @@ var camera_yaw: float = -0.7
 var camera_pitch: float = 0.58
 var camera_distance: float = 21.0
 var orbiting := false
+var camera_panning := false
 var _last_orbit_position := Vector2.ZERO
+var _last_camera_pan_position := Vector2.ZERO
 var plan_editor: PCGBuildingPlanEditor
 var detail_window: Window
 var detail_plan_editor: PCGBuildingPlanEditor
@@ -65,6 +67,7 @@ var _drag_before: Dictionary = {}
 var _bridge_drag_before: Dictionary = {}
 var _last_param_snapshot: Dictionary = {}
 var _skybridge_digest: String = ""
+var _mode_buttons: Dictionary = {}
 
 func _ready() -> void:
 	_build_environment()
@@ -194,12 +197,17 @@ func _build_ui() -> void:
 	_button(left, "删除选中面岛", _delete_selected)
 	_add_hint(left, "Shift+单击可多选建筑；至少两栋轮廓相交/相接时才能融合。")
 	_add_heading(left, "廊桥编辑")
-	_button(left, "模式：建筑主体平面编辑", func(): _set_editor_mode(PCGBuildingPlanEditor.InteractionMode.FOOTPRINT,
-		"建筑主体平面编辑模式：拖动整栋或顶点；Shift+单击多选。"))
-	_button(left, "模式：标注结合点", func(): _set_editor_mode(PCGBuildingPlanEditor.InteractionMode.CONNECTOR,
-		"结合点模式：点击建筑立面边缘放置廊桥结合点；点击已有结合点选中后，可用下方“结合点楼层”修改其楼层。"))
-	_button(left, "模式：桥节点编辑", func(): _set_editor_mode(PCGBuildingPlanEditor.InteractionMode.BRIDGE_NODE,
-		"桥节点模式：拖动路径节点改变走向与弧度；选中节点后可在右侧面板调转弯强度和桥面高度。"))
+	_mode_button(left, "模式：建筑主体平面编辑", PCGBuildingPlanEditor.InteractionMode.FOOTPRINT,
+		"建筑主体平面编辑模式：拖动整栋或顶点；Shift+单击多选。")
+	_mode_button(left, "模式：标注结合点", PCGBuildingPlanEditor.InteractionMode.CONNECTOR,
+		"结合点模式：点击建筑立面边缘放置廊桥结合点；点击已有结合点选中后，可用下方“结合点楼层”修改其楼层。")
+	_mode_button(left, "模式：桥节点编辑", PCGBuildingPlanEditor.InteractionMode.BRIDGE_NODE,
+		"桥节点模式：拖动路径节点或贝塞尔手柄改变走向与弧度；选中节点后可在右侧面板调转弯强度和桥面高度。")
+	_mode_button(left, "模式：增加节点", PCGBuildingPlanEditor.InteractionMode.BRIDGE_ADD,
+		"增加节点模式：点击桥曲线即在最近位置插入一个节点；按钮保持高亮，可连续添加。")
+	_mode_button(left, "模式：减少节点", PCGBuildingPlanEditor.InteractionMode.BRIDGE_REMOVE,
+		"减少节点模式：点击内部节点即删除；连接结合点的两端端点不可删除。")
+	_mode_buttons[PCGBuildingPlanEditor.InteractionMode.FOOTPRINT].set_pressed_no_signal(true)
 	connector_floor_spin = _spin_row(left, "结合点楼层", 0.0, 11.0, 1.0)
 	connector_floor_spin.value = 1.0
 	connector_floor_spin.value_changed.connect(_on_connector_floor_changed)
@@ -251,7 +259,7 @@ func _build_ui() -> void:
 	node_height_spin.value_changed.connect(_on_node_height_changed)
 	tension_spin.editable = false
 	node_height_spin.editable = false
-	_add_hint(right, "先在顶视图进入“桥节点编辑”模式并点击节点。\n转弯强度 1 为自然穿过，0 为圆角驻停，>1 加强转弯；\n自动错开的抬升量也保留在节点高度中，可手动覆盖。")
+	_add_hint(right, "先在顶视图进入“桥节点编辑”模式并点击节点或贝塞尔手柄。\n转弯强度 1 为自然穿过，0 为圆角驻停，>1 加强转弯；\n设置转弯强度会清除该节点手柄；自动错开的抬升量也保留在节点高度中，可手动覆盖。")
 	_add_heading(right, "生成统计")
 	stats_label = Label.new()
 	stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -263,7 +271,7 @@ func _build_ui() -> void:
 	_button(right, "撤销 / 重做", func(): status_label.text = "快捷键：⌘/Ctrl+Z 撤销，Shift+⌘/Ctrl+Z 重做。")
 	_button(right, "重置视角 (F)", _reset_camera)
 	_button(right, "返回表面组件示例", func(): get_tree().change_scene_to_file("res://scenes/main.tscn"))
-	_add_hint(right, "右键拖动环绕 · 滚轮缩放\n⌘/Ctrl+Z 撤销 · Delete 删除")
+	_add_hint(right, "中键平移 · 右键环绕 · 滚轮缩放\n⌘/Ctrl+Z 撤销 · Delete 删除")
 
 func _make_plan_editor() -> PCGBuildingPlanEditor:
 	var editor := PlanEditor.new()
@@ -279,6 +287,9 @@ func _make_plan_editor() -> PCGBuildingPlanEditor:
 	editor.bridge_node_selected.connect(_on_bridge_node_selected)
 	editor.bridge_node_moved.connect(_on_bridge_node_moved)
 	editor.bridge_node_drag_finished.connect(_on_bridge_node_drag_finished)
+	editor.bridge_node_insert_requested.connect(_on_bridge_node_insert)
+	editor.bridge_node_remove_requested.connect(_on_bridge_node_remove)
+	editor.bridge_handle_moved.connect(_on_bridge_handle_moved)
 	editor.zoom_changed.connect(_on_detail_zoom_changed)
 	return editor
 
@@ -486,14 +497,24 @@ func _update_bridge_info(result: Dictionary) -> void:
 	bridge_info_label.text = "\n".join(lines)
 
 func _set_editor_mode(mode: int, hint: String) -> void:
+	for known in _mode_buttons:
+		_mode_buttons[known].set_pressed_no_signal(known == mode)
 	plan_editor.set_interaction_mode(mode)
 	if detail_plan_editor != null:
 		detail_plan_editor.set_interaction_mode(mode)
-	if mode != PCGBuildingPlanEditor.InteractionMode.BRIDGE_NODE:
+	if mode != PCGBuildingPlanEditor.InteractionMode.BRIDGE_NODE \
+			and mode != PCGBuildingPlanEditor.InteractionMode.BRIDGE_ADD \
+			and mode != PCGBuildingPlanEditor.InteractionMode.BRIDGE_REMOVE:
 		selected_bridge_id = &""
 		selected_node_index = -1
 		_update_node_editor()
 	status_label.text = hint
+
+func _mode_button(parent: VBoxContainer, text: String, mode: int, hint: String) -> Button:
+	var button := _button(parent, text, func(): _set_editor_mode(mode, hint))
+	button.toggle_mode = true
+	_mode_buttons[mode] = button
+	return button
 
 func _on_connector_selected(connector_id: StringName) -> void:
 	selected_connector_id = connector_id
@@ -655,6 +676,54 @@ func _on_bridge_node_drag_finished(bridge_id: StringName) -> void:
 	_register_bridge_action("拖动廊桥节点", bridge_id, _bridge_drag_before, after, &"drag_bridge_node:%s" % bridge_id)
 	_bridge_drag_before = {}
 	status_label.text = "廊桥节点已更新；路径、交叉合并与错开已重新求解。"
+
+func _on_bridge_node_insert(bridge_id: StringName, position: Vector3) -> void:
+	var bridge := plan.get_skybridge(bridge_id)
+	if bridge == null:
+		return
+	var before := _bridge_snapshot(bridge)
+	var index := bridge.insert_node_near(position)
+	if index < 0:
+		return
+	_after_bridge_edit("增加桥节点", bridge, before)
+	selected_bridge_id = bridge_id
+	selected_node_index = index
+	plan_editor.selected_bridge_id = bridge_id
+	plan_editor.selected_node_index = index
+	_update_node_editor()
+	plan_editor.queue_redraw()
+	status_label.text = "已在桥曲线插入节点 %d；拖动它或贝塞尔手柄可继续调整形状。" % index
+
+func _on_bridge_node_remove(bridge_id: StringName, index: int) -> void:
+	var bridge := plan.get_skybridge(bridge_id)
+	if bridge == null:
+		return
+	if bridge.nodes.size() <= 2:
+		status_label.text = "廊桥至少需要保留两个节点。"
+		return
+	if index <= 0 or index >= bridge.nodes.size() - 1:
+		status_label.text = "端点连接结合点，不可删除。"
+		return
+	var before := _bridge_snapshot(bridge)
+	if not bridge.remove_node(index):
+		return
+	_after_bridge_edit("删除桥节点", bridge, before)
+	selected_node_index = clampi(index - 1, 0, bridge.nodes.size() - 1)
+	plan_editor.selected_node_index = selected_node_index
+	_update_node_editor()
+	plan_editor.queue_redraw()
+	status_label.text = "已删除桥节点 %d；交叉合并与错开已重新求解。" % index
+
+func _on_bridge_handle_moved(bridge_id: StringName, node_index: int, kind: StringName,
+			offset: Vector3) -> void:
+	var bridge := plan.get_skybridge(bridge_id)
+	if bridge == null:
+		return
+	bridge.set_node_handle(node_index, kind, offset)
+	_sync_skybridges()
+	plan_editor.set_plan(plan)
+	if detail_plan_editor != null:
+		detail_plan_editor.set_plan(plan)
 
 func _on_tension_changed(value: float) -> void:
 	var bridge := plan.get_skybridge(selected_bridge_id)
@@ -1041,6 +1110,23 @@ func _input(event: InputEvent) -> void:
 			undo_redo.undo()
 		status_label.text = "已恢复历史状态；仅重建发生变化的建筑。"
 		get_viewport().set_input_as_handled()
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_MIDDLE:
+		var was_panning := camera_panning
+		if event.pressed:
+			camera_panning = not plan_editor.get_global_rect().has_point(event.position)
+			_last_camera_pan_position = event.position
+		else:
+			camera_panning = false
+		if was_panning or camera_panning:
+			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion and camera_panning:
+		var pan_delta: Vector2 = event.position - _last_camera_pan_position
+		_last_camera_pan_position = event.position
+		var world_per_pixel := camera_distance * 0.0015
+		camera_target -= camera.global_basis.x.normalized() * pan_delta.x * world_per_pixel
+		camera_target += camera.global_basis.y.normalized() * pan_delta.y * world_per_pixel
+		_update_camera()
+		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
 		var was_orbiting := orbiting
 		if event.pressed:
@@ -1109,5 +1195,7 @@ func _reset_camera() -> void:
 	_update_camera()
 
 func _exit_tree() -> void:
+	if is_instance_valid(undo_redo):
+		undo_redo.dispose()
 	undo_redo = null
 	session = null

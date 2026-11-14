@@ -150,6 +150,17 @@ func _test_node_editing() -> void:
 	bridge.set_node_tension(1, 0.0)
 	var eased := bridge.sampled_path(8)
 	_check(not eased[4].is_equal_approx(arced[4]), "转弯强度变化应改变弧度过渡")
+	bridge.set_node_handle(1, &"out", Vector3(0.0, 0.0, 2.0))
+	_check(bridge.has_node_handle(1, &"out"), "节点应记录贝塞尔手柄")
+	_check(bridge.semantic_data()["nodes"][1].has("out"), "手柄应进入语义数据")
+	var handled := bridge.sampled_path(8)
+	_check(not handled[12].is_equal_approx(eased[12]), "手柄应改变曲线形状")
+	bridge.set_node_tension(1, 1.0)
+	_check(not bridge.has_node_handle(1, &"out"), "设置转弯强度应清除该节点手柄")
+	var inserted := bridge.insert_node_near(Vector3(6.0, 2.6, 1.0))
+	_check(inserted == 2 and bridge.nodes.size() == 4, "应在最近跨度插入新节点")
+	_check(not bridge.remove_node(0) and not bridge.remove_node(3), "连接结合点的端点不可删除")
+	_check(bridge.remove_node(1) and bridge.nodes.size() == 3, "内部节点应可删除")
 	bridge.auto_lift = 1.5
 	_check(is_equal_approx(bridge.node_positions()[0].y, 4.1), "自动错开抬升应叠加到节点高度")
 	_check(bridge.semantic_data()["nodes"].size() == 3, "语义数据应包含全部节点")
@@ -297,6 +308,12 @@ func _test_workbench_integration() -> void:
 	workbench.undo_redo.undo()
 	workbench.undo_redo.undo()
 	_check(workbench.plan.get_skybridge(&"bridge_2") == null, "连续撤销应回到标注前状态")
+	workbench._on_bridge_node_insert(&"bridge_demo", Vector3(1.0, 2.6, -1.0))
+	_check(workbench.plan.get_skybridge(&"bridge_demo").nodes.size() == 4, "增加节点应插入桥曲线")
+	workbench._on_bridge_node_remove(&"bridge_demo", 1)
+	_check(workbench.plan.get_skybridge(&"bridge_demo").nodes.size() == 3, "减少节点应移除内部节点")
+	workbench.undo_redo.undo()
+	_check(workbench.plan.get_skybridge(&"bridge_demo").nodes.size() == 4, "撤销应恢复被删节点")
 	workbench.undo_redo.clear_history()
 	workbench.queue_free()
 	await process_frame
@@ -372,8 +389,8 @@ func _total_windows(building: Node3D) -> int:
 	return count
 
 func _finish() -> void:
-	if checks != 71:
-		failures.append("实际执行检查数 %d 与预期 71 不符，可能存在脚本错误中断了测试" % checks)
+	if checks != 81:
+		failures.append("实际执行检查数 %d 与预期 81 不符，可能存在脚本错误中断了测试" % checks)
 	if failures.is_empty():
 		print("SKYBRIDGE_TEST_RESULT: PASS checks=%d" % checks)
 		quit(0)
