@@ -334,6 +334,12 @@ func _test_workbench_integration() -> void:
 	_check(workbench.plan.get_skybridge(&"bridge_demo").nodes.size() == 3, "减少节点应移除内部节点")
 	workbench.undo_redo.undo()
 	_check(workbench.plan.get_skybridge(&"bridge_demo").nodes.size() == 4, "撤销应恢复被删节点")
+	workbench._on_bridge_node_remove(&"bridge_demo", 0)
+	_check(workbench.plan.get_skybridge(&"bridge_demo") == null, "删除端点应移除整条廊桥")
+	_check(workbench.plan.get_connector(&"conn_l_tower") == null, "删除端点应级联移除入口结合点")
+	workbench.undo_redo.undo()
+	_check(workbench.plan.get_skybridge(&"bridge_demo") != null
+		and workbench.plan.get_connector(&"conn_l_tower") != null, "撤销应恢复廊桥与入口")
 	_check(workbench.gizmos.grips.size() > 0, "主视图应生成截面与贝塞尔手柄")
 	var first_grip: Dictionary = workbench.gizmos.grips[0]
 	var grip_screen: Vector2 = workbench.camera.unproject_position(first_grip["position"])
@@ -454,8 +460,8 @@ func _total_windows(building: Node3D) -> int:
 	return count
 
 func _finish() -> void:
-	if checks != 93:
-		failures.append("实际执行检查数 %d 与预期 93 不符，可能存在脚本错误中断了测试" % checks)
+	if checks != 96:
+		failures.append("实际执行检查数 %d 与预期 96 不符，可能存在脚本错误中断了测试" % checks)
 	if failures.is_empty():
 		print("SKYBRIDGE_TEST_RESULT: PASS checks=%d" % checks)
 		quit(0)

@@ -715,11 +715,14 @@ func _on_bridge_node_remove(bridge_id: StringName, index: int) -> void:
 	var bridge := plan.get_skybridge(bridge_id)
 	if bridge == null:
 		return
+	if index <= 0 or index >= bridge.nodes.size() - 1:
+		# 端点连接结合点：删除端点即删除整条廊桥及其两端入口，不留下悬空连接。
+		plan_editor.selected_bridge_id = bridge_id
+		_delete_selected_bridge()
+		status_label.text = "已删除端点所在廊桥 %s 及其两端入口，可通过撤销恢复。" % bridge_id
+		return
 	if bridge.nodes.size() <= 2:
 		status_label.text = "廊桥至少需要保留两个节点。"
-		return
-	if index <= 0 or index >= bridge.nodes.size() - 1:
-		status_label.text = "端点连接结合点，不可删除。"
 		return
 	var before := _bridge_snapshot(bridge)
 	if not bridge.remove_node(index):
