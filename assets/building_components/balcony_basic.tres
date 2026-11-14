@@ -5,10 +5,12 @@
 [resource]
 script = ExtResource("1")
 id = &"balcony_basic"
-display_name = "小阳台"
+display_name = "窗台花盆台"
 category = "立面附属"
 role = 8
 geometry = 9
-size = Vector3(1.65, 0.95, 0.95)
+size = Vector3(1.25, 0.45, 0.42)
 color = Color(0.34, 0.3, 0.25, 1)
+accent_color = Color(0.22, 0.42, 0.2, 1)
 material_id = &"building/facade/balcony"
+accent_material_id = &"building/facade/plants"

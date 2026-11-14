@@ -63,6 +63,10 @@ func _run() -> void:
 	_check(not generator._corner_clearance(corner_polygon, 2, 0.02, catalog.get_definition(&"window_basic")), "凹角附近的窗户必须被净空规则拒绝")
 	_check(not _entrances_hit_other_buildings(result["root"], plan, generator, catalog), "入口及遮阳顶不得插入其他建筑")
 	_check(_roof_racks_fit(result["root"], plan, generator, catalog), "晾衣架完整占地不得穿出女儿墙或碰到检修屋")
+	_check(_canopy_supports_reach_wall(catalog), "遮阳棚与大门遮阳顶的支撑杆必须连接墙面和棚体外缘")
+	_check(_shallow_planters(catalog), "窗下花盆台必须浅且包含植物")
+	_check(_planters_aligned_with_sills(result["root"], catalog), "花盆台必须贴近宿主窗台下方")
+	_check(_clothes_rods_near_sills(result["root"], catalog), "带衣物的晾衣杆必须位于窗台附近而不是窗中")
 	var tiny := PCGBuildingFootprint.new()
 	tiny.id = &"tiny_roof"
 	tiny.polygon = PackedVector2Array([Vector2(-0.55, -0.55), Vector2(0.55, -0.55), Vector2(0.55, 0.55), Vector2(-0.55, 0.55)])
@@ -530,6 +534,65 @@ func _entrances_hit_other_buildings(root: Node3D, plan: PCGBuildingPlan,
 			if generator._hits_obstacles(bounds, building.get_meta("footprint_id"), plan.footprints):
 				return true
 	return false
+
+func _canopy_supports_reach_wall(catalog: PCGBuildingComponentCatalog) -> bool:
+	for id in [&"awning_basic", &"double_door_canopy_basic"]:
+		var mesh := catalog.get_definition(id).get_mesh()
+		var touches_wall := false
+		var reaches_outer := false
+		for surface in mesh.get_surface_count():
+			var vertices: PackedVector3Array = mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]
+			for vertex in vertices:
+				if vertex.z < -0.02:
+					touches_wall = true
+				if vertex.z > 0.5:
+					reaches_outer = true
+		if not touches_wall or not reaches_outer:
+			return false
+	return true
+
+func _shallow_planters(catalog: PCGBuildingComponentCatalog) -> bool:
+	var definition := catalog.get_definition(&"balcony_basic")
+	return definition.size.z <= 0.5 and definition.get_mesh().get_surface_count() == 2 and definition.display_name.contains("花盆")
+
+func _planters_aligned_with_sills(root: Node3D, catalog: PCGBuildingComponentCatalog) -> bool:
+	for building in root.get_children():
+		var windows: Dictionary = {}
+		for component in building.get_node("StandardComponents").get_children():
+			if component.get_meta("component_role") == PCGBuildingComponentDefinition.Role.WINDOW:
+				windows[component.get_meta("slot_id", &"")] = component
+		for component in building.get_node("StandardComponents").get_children():
+			if component.get_meta("component_role") != PCGBuildingComponentDefinition.Role.BALCONY:
+				continue
+			var host: MeshInstance3D = windows.get(component.get_meta("host_window_id", &""))
+			if host == null:
+				return false
+			var window_definition := catalog.get_definition(host.get_meta("component_id"))
+			var planter_definition := catalog.get_definition(component.get_meta("component_id"))
+			var expected := host.transform.origin.y - window_definition.size.y * host.transform.basis.y.length() * 0.5 + planter_definition.size.y * 0.35
+			if absf(component.transform.origin.y - expected) > 0.03:
+				return false
+	return true
+
+func _clothes_rods_near_sills(root: Node3D, catalog: PCGBuildingComponentCatalog) -> bool:
+	for building in root.get_children():
+		var windows: Dictionary = {}
+		for component in building.get_node("StandardComponents").get_children():
+			if component.get_meta("component_role") == PCGBuildingComponentDefinition.Role.WINDOW:
+				windows[component.get_meta("slot_id", &"")] = component
+		for component in building.get_node("StandardComponents").get_children():
+			if component.get_meta("component_role") != PCGBuildingComponentDefinition.Role.WINDOW_DRYING_ROD:
+				continue
+			if catalog.get_definition(component.get_meta("component_id")).geometry != PCGBuildingComponentDefinition.Geometry.WINDOW_DRYING_CLOTHES:
+				continue
+			var host: MeshInstance3D = windows.get(component.get_meta("host_window_id", &""))
+			if host == null:
+				return false
+			var definition := catalog.get_definition(host.get_meta("component_id"))
+			var expected := host.transform.origin.y - definition.size.y * host.transform.basis.y.length() * 0.5
+			if absf(component.transform.origin.y - expected) > 0.03:
+				return false
+	return true
 
 func _roof_racks_fit(root: Node3D, plan: PCGBuildingPlan,
 			generator: PCGBuildingGenerator, catalog: PCGBuildingComponentCatalog) -> bool:

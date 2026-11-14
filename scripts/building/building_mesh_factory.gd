@@ -17,17 +17,7 @@ static func component(definition) -> ArrayMesh:
 					"center": Vector3(0.0, definition.size.y * 0.5, 0.0)},
 			])
 		definition.Geometry.AWNING:
-			return MeshBuildUtil.boxes([
-				{"size": Vector3(definition.size.x, definition.size.y, definition.size.z),
-					"center": Vector3(0.0, 0.0, definition.size.z * 0.5),
-					"basis": Basis(Vector3.RIGHT, deg_to_rad(-12.0))},
-				{"size": Vector3(definition.size.x * 0.035, definition.size.y, definition.size.z),
-					"center": Vector3(-definition.size.x * 0.42, -definition.size.y * 1.8, definition.size.z * 0.48),
-					"basis": Basis(Vector3.RIGHT, deg_to_rad(32.0))},
-				{"size": Vector3(definition.size.x * 0.035, definition.size.y, definition.size.z),
-					"center": Vector3(definition.size.x * 0.42, -definition.size.y * 1.8, definition.size.z * 0.48),
-					"basis": Basis(Vector3.RIGHT, deg_to_rad(32.0))},
-			])
+			return _awning(definition.size)
 		definition.Geometry.ROOF_HATCH:
 			return MeshBuildUtil.boxes([
 				{"size": definition.size, "center": Vector3.ZERO},
@@ -361,28 +351,54 @@ static func _window_drying(size: Vector3, clothes: bool) -> ArrayMesh:
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, cloth.surface_get_arrays(0))
 	return mesh
 
+static func _awning(size: Vector3) -> ArrayMesh:
+	var parts: Array = [{
+		"size": size, "center": Vector3(0.0, 0.0, size.z * 0.5),
+		"basis": Basis(Vector3.RIGHT, deg_to_rad(-12.0)),
+	}]
+	for x in [-size.x * 0.42, size.x * 0.42]:
+		parts.append(_beam_between(
+			Vector3(x, -0.55, -0.04),
+			Vector3(x, -0.05, size.z * 0.85), 0.045))
+	return MeshBuildUtil.boxes(parts)
+
 static func _balcony(size: Vector3) -> ArrayMesh:
 	var parts: Array = [
 		{"size": Vector3(size.x, size.y * 0.12, size.z), "center": Vector3(0.0, -size.y * 0.4, size.z * 0.5)},
 		{"size": Vector3(size.x, 0.06, 0.06), "center": Vector3(0.0, size.y * 0.4, size.z * 0.96)},
 	]
 	for x in [-0.47, -0.24, 0.0, 0.24, 0.47]:
-		parts.append({"size": Vector3(0.045, size.y * 0.82, 0.045),
+		parts.append({"size": Vector3(0.035, size.y * 0.82, 0.035),
 			"center": Vector3(size.x * x, 0.0, size.z * 0.96)})
 	for x in [-0.47, 0.47]:
-		parts.append({"size": Vector3(0.06, 0.06, size.z * 0.94),
+		parts.append({"size": Vector3(0.05, 0.05, size.z * 0.94),
 			"center": Vector3(size.x * x, size.y * 0.4, size.z * 0.49)})
-	return MeshBuildUtil.boxes(parts)
+	var mesh := MeshBuildUtil.boxes(parts)
+	var plants: Array = []
+	for x in [-0.32, 0.0, 0.32]:
+		plants.append({"size": Vector3(0.14, 0.16, 0.14), "center": Vector3(x, -0.04, size.z * 0.58)})
+		plants.append({"size": Vector3(0.22, 0.18, 0.18), "center": Vector3(x, 0.13, size.z * 0.58)})
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, MeshBuildUtil.boxes(plants).surface_get_arrays(0))
+	return mesh
+
+static func _beam_between(start: Vector3, end: Vector3, thickness: float) -> Dictionary:
+	var delta := end - start
+	return {
+		"size": Vector3(thickness, delta.length(), thickness),
+		"center": (start + end) * 0.5,
+		"basis": Basis(Quaternion(Vector3.UP, delta.normalized())),
+	}
 
 static func _double_door(size: Vector3, width: float) -> ArrayMesh:
 	var frame := _rect_ring(Vector3(size.x * 0.9, size.y * 0.82, 0.14), width)
-	var canopy := MeshBuildUtil.boxes([
+	var canopy_parts: Array = [
 		{"size": Vector3(size.x, 0.1, size.z), "center": Vector3(0.0, size.y * 0.43, size.z * 0.5)},
-		{"size": Vector3(0.08, 0.5, size.z * 0.62), "center": Vector3(-size.x * 0.38, size.y * 0.31, size.z * 0.28),
-			"basis": Basis(Vector3.RIGHT, deg_to_rad(32.0))},
-		{"size": Vector3(0.08, 0.5, size.z * 0.62), "center": Vector3(size.x * 0.38, size.y * 0.31, size.z * 0.28),
-			"basis": Basis(Vector3.RIGHT, deg_to_rad(32.0))},
-	])
+	]
+	for x in [-size.x * 0.38, size.x * 0.38]:
+		canopy_parts.append(_beam_between(
+			Vector3(x, size.y * 0.16, -0.04),
+			Vector3(x, size.y * 0.38, size.z * 0.85), 0.065))
+	var canopy := MeshBuildUtil.boxes(canopy_parts)
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 	surface.append_from(frame, 0, Transform3D(Basis.IDENTITY, Vector3(0.0, -size.y * 0.08, 0.0)))

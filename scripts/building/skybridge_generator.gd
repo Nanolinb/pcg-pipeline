@@ -327,7 +327,7 @@ func _bridge_mesh(bridge: PCGSkybridgeDefinition,
 	var post_count := _append_interval_posts(path, groups["post"], frame)
 	var portal_count := 0
 	for anchor in anchors:
-		if _append_portal(frame, anchor, groups["portal"]):
+		if _append_portal(frame, anchor, groups["portal"], bridge):
 			portal_count += 1
 	var mesh := MeshBuildUtil.mesh(frame[0], frame[1], frame[2], frame[3])
 	var accent := _swept_arrays(path, groups["accent"])
@@ -341,15 +341,20 @@ func _bridge_mesh(bridge: PCGSkybridgeDefinition,
 		"portal_count": portal_count}
 
 # 在结合点立面处生成门户框（门套），样式由廊桥组件 portal 参数决定，随廊桥一起出现和消失。
-func _append_portal(arrays: Array, anchor: Dictionary, portal_info: Dictionary) -> bool:
+func _append_portal(arrays: Array, anchor: Dictionary, portal_info: Dictionary,
+			bridge: PCGSkybridgeDefinition = null) -> bool:
 	if portal_info.is_empty() or not anchor.has("outward"):
 		return false
 	var outward: Vector3 = anchor["outward"]
 	var center: Vector3 = anchor["position"]
 	var fw: float = portal_info.get("frame_width", 0.12)
 	var protrude: float = portal_info.get("protrude", 0.14)
-	var opening_w: float = anchor.get("width", 1.2) + 0.3
+	var opening_w: float = anchor.get("width", 1.2)
 	var opening_h: float = anchor.get("height", 2.4)
+	if bridge != null:
+		opening_w = maxf(opening_w, bridge.width)
+		opening_h = maxf(opening_h, bridge.height)
+	opening_w += 0.3
 	if opening_w <= 0.0 or opening_h <= 0.0:
 		return false
 	var right := Vector3.UP.cross(outward).normalized()

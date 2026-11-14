@@ -66,7 +66,7 @@ func build_building(footprint: PCGBuildingFootprint, master_seed: String,
 		root.add_child(foundation)
 	var body := MeshInstance3D.new()
 	body.name = "DerivedSolid"
-	body.mesh = MeshFactory.extrude(polygon, height, _facade_openings(footprint, polygon, height, connectors))
+	body.mesh = MeshFactory.extrude(polygon, height, _facade_openings(footprint, polygon, height, connectors, terrain))
 	body.material_override = preload("res://addons/pcg_shared/pcg_material_access.gd").library().solid(
 		footprint.wall_material_id, footprint.wall_color, 0.88, 0.0, &"preserve", 1.0
 	)
@@ -148,12 +148,14 @@ func build_building(footprint: PCGBuildingFootprint, master_seed: String,
 				var choice := random.randf()
 				var force_balcony: bool = edge_index == entrance.get("edge", -2) and floor_index == 1 and bay == 0
 				if force_balcony or choice < 0.1:
-					var balcony_y := float(floor_index) * footprint.floor_height + balcony.size.y * 0.47
+					var balcony_y := center_y - window.size.y * scale_factor * 0.5 + balcony.size.y * 0.35
 					count += _add_decoration(components, balcony, _facade_transform(a, b, t, balcony_y),
 						Vector3.ONE, footprint.id, base_elevation, polygon, edge_index, t, obstacles, occupied, slot_id, diagnostics)
 				elif choice < 0.34:
 					var drying := drying_variants[(edge_index + floor_index + bay) % drying_variants.size()]
 					var drying_y := center_y - window.size.y * scale_factor * 0.25
+					if drying.geometry == Definition.Geometry.WINDOW_DRYING_CLOTHES:
+						drying_y = center_y - window.size.y * scale_factor * 0.5
 					count += _add_decoration(components, drying, _facade_transform(a, b, t, drying_y),
 						Vector3.ONE, footprint.id, base_elevation, polygon, edge_index, t, obstacles, occupied, slot_id, diagnostics)
 	# 连廊门套由廊桥组件在桥端生成（见 skybridge_generator._append_portal），建筑侧只裁切门洞。
@@ -188,16 +190,16 @@ const DOORWAY_MARGIN := 0.15
 
 # 结合点 → 主体挤出的门洞参数（内凹洞道，裁切楼面主体）。
 func _facade_openings(footprint: PCGBuildingFootprint, polygon: PackedVector2Array,
-			height: float, connectors: Array) -> Array:
+			height: float, connectors: Array, plan: PCGBuildingPlan = null) -> Array:
 	var result: Array = []
 	for connector in connectors:
-		var opening := _connector_opening(connector, footprint, polygon, height)
+		var opening := _connector_opening(connector, footprint, polygon, height, plan)
 		if not opening.is_empty():
 			result.append(opening)
 	return result
 
 func _connector_opening(connector, footprint: PCGBuildingFootprint,
-			polygon: PackedVector2Array, height: float) -> Dictionary:
+			polygon: PackedVector2Array, height: float, plan: PCGBuildingPlan = null) -> Dictionary:
 	if connector == null or polygon.size() < 3:
 		return {}
 	var index := clampi(connector.edge_index, 0, polygon.size() - 1)
@@ -205,8 +207,16 @@ func _connector_opening(connector, footprint: PCGBuildingFootprint,
 	var b: Vector2 = polygon[(index + 1) % polygon.size()]
 	var length := maxf(a.distance_to(b), 0.001)
 	var y0 := clampf(float(connector.floor) * footprint.floor_height, 0.0, height)
-	var y1 := clampf(y0 + float(connector.height), 0.0, height)
-	var half := minf(float(connector.width) * 0.5 + DOORWAY_MARGIN, length * 0.5 - 0.05)
+	# 门洞跟随廊桥截面：宽高取结合点与已连接桥截面的较大值。
+	var opening_width := float(connector.width)
+	var opening_height := float(connector.height)
+	if plan != null:
+		for bridge in plan.skybridges:
+			if bridge != null and (bridge.connector_a == connector.id or bridge.connector_b == connector.id):
+				opening_width = maxf(opening_width, bridge.width)
+				opening_height = maxf(opening_height, bridge.height)
+	var y1 := clampf(y0 + opening_height, 0.0, height)
+	var half := minf(opening_width * 0.5 + DOORWAY_MARGIN, length * 0.5 - 0.05)
 	if y1 - y0 < 0.3 or half <= 0.05:
 		return {}
 	var center := clampf(float(connector.edge_t), 0.0, 1.0) * length

@@ -7,6 +7,7 @@ const Generator = preload("res://scripts/building/building_generator.gd")
 const PlanEditor = preload("res://scripts/building/building_plan_editor.gd")
 const Connector = preload("res://scripts/building/skybridge_connector.gd")
 const SkybridgeGen = preload("res://scripts/building/skybridge_generator.gd")
+const Gizmos = preload("res://scripts/building/skybridge_gizmos.gd")
 const MeshBuildUtil = preload("res://addons/pcg_shared/mesh_build_util.gd")
 
 class FitIconButton extends Button:
@@ -37,6 +38,10 @@ var selected_bridge_id: StringName = &""
 var selected_connector_id: StringName = &""
 var selected_node_index: int = -1
 var camera: Camera3D
+var gizmos: PCGSkybridgeGizmos
+var right_panel: PanelContainer
+var _main_drag: Dictionary = {}
+var _main_drag_before: Dictionary = {}
 var camera_target := Vector3(0.8, 3.8, 1.0)
 var camera_yaw: float = -0.7
 var camera_pitch: float = 0.58
@@ -65,7 +70,6 @@ var session: BuildingPlanSession
 var undo_redo: PCGEditCommandHistory
 var _drag_before: Dictionary = {}
 var _bridge_drag_before: Dictionary = {}
-var _section_drag_before: Dictionary = {}
 var _last_param_snapshot: Dictionary = {}
 var _skybridge_digest: String = ""
 var _mode_buttons: Dictionary = {}
@@ -83,6 +87,9 @@ func _ready() -> void:
 	add_child(building_root)
 	_build_ui()
 	_update_terrain()
+	gizmos = Gizmos.new()
+	gizmos.camera = camera
+	add_child(gizmos)
 	_sync_plan()
 	if not plan.footprints.is_empty():
 		_select_footprint(plan.footprints[0].id)
@@ -227,7 +234,7 @@ func _build_ui() -> void:
 		_add_hint(left, error)
 	_add_hint(left, "组件由 assets/building_components/*.tres 注册；\n新增资产不需要修改生成器。")
 
-	var right_panel := PanelContainer.new()
+	right_panel = PanelContainer.new()
 	right_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
 	right_panel.offset_left = -320.0
 	right_panel.offset_top = 112.0
@@ -291,9 +298,6 @@ func _make_plan_editor() -> PCGBuildingPlanEditor:
 	editor.bridge_node_insert_requested.connect(_on_bridge_node_insert)
 	editor.bridge_node_remove_requested.connect(_on_bridge_node_remove)
 	editor.bridge_handle_moved.connect(_on_bridge_handle_moved)
-	editor.bridge_section_started.connect(_on_bridge_section_started)
-	editor.bridge_section_changed.connect(_on_bridge_section_changed)
-	editor.bridge_section_finished.connect(_on_bridge_section_finished)
 	editor.zoom_changed.connect(_on_detail_zoom_changed)
 	return editor
 
@@ -471,6 +475,8 @@ func _sync_skybridges() -> bool:
 		skybridge_root.queue_free()
 	skybridge_root = result["root"]
 	add_child(skybridge_root)
+	if gizmos != null:
+		gizmos.rebuild(plan)
 	_update_bridge_info(result)
 	_update_stats()
 	return true
@@ -738,7 +744,19 @@ func _on_bridge_handle_moved(bridge_id: StringName, node_index: int, kind: Strin
 
 func _on_bridge_section_started(bridge_id: StringName) -> void:
 	var bridge := plan.get_skybridge(bridge_id)
-	_section_drag_before = _bridge_snapshot(bridge) if bridge != null else {}
+	_main_drag_before = _bridge_snapshot(bridge) if bridge != null else {}
+
+func _on_bridge_section_finished(bridge_id: StringName) -> void:
+	var bridge := plan.get_skybridge(bridge_id)
+	if bridge == null or _main_drag_before.is_empty():
+		_main_drag_before = {}
+		return
+	var after := _bridge_snapshot(bridge)
+	_register_bridge_action("调整廊桥截面", bridge_id, _main_drag_before, after,
+		&"drag_bridge_section:%s" % bridge_id)
+	_main_drag_before = {}
+	status_label.text = "廊桥 %s 截面已调整为 %.1f m 宽 × %.1f m 高（以底板为基准）。" % [
+		bridge_id, bridge.width, bridge.height]
 
 func _on_bridge_section_changed(bridge_id: StringName, kind: StringName, value: float) -> void:
 	var bridge := plan.get_skybridge(bridge_id)
@@ -752,18 +770,6 @@ func _on_bridge_section_changed(bridge_id: StringName, kind: StringName, value: 
 	plan_editor.set_plan(plan)
 	if detail_plan_editor != null:
 		detail_plan_editor.set_plan(plan)
-
-func _on_bridge_section_finished(bridge_id: StringName) -> void:
-	var bridge := plan.get_skybridge(bridge_id)
-	if bridge == null or _section_drag_before.is_empty():
-		_section_drag_before = {}
-		return
-	var after := _bridge_snapshot(bridge)
-	_register_bridge_action("调整廊桥截面", bridge_id, _section_drag_before, after,
-		&"drag_bridge_section:%s" % bridge_id)
-	_section_drag_before = {}
-	status_label.text = "廊桥 %s 截面已调整为 %.1f m 宽 × %.1f m 高（以底板为基准）。" % [
-		bridge_id, bridge.width, bridge.height]
 
 func _on_tension_changed(value: float) -> void:
 	var bridge := plan.get_skybridge(selected_bridge_id)
@@ -1199,17 +1205,74 @@ func _input(event: InputEvent) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				if not _over_ui(event.position):
+					var hit := gizmos.pick(event.position)
+					if not hit.is_empty():
+						_main_drag = hit
+						_main_drag_before = _bridge_snapshot(plan.get_skybridge(hit["bridge_id"]))
+						get_viewport().set_input_as_handled()
+			else:
+				if not _main_drag.is_empty():
+					_finish_main_drag()
+					get_viewport().set_input_as_handled()
+			return
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
 			camera_distance = maxf(7.0, camera_distance * 0.9)
 			_update_camera()
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
 			camera_distance = minf(42.0, camera_distance * 1.1)
 			_update_camera()
+	elif event is InputEventMouseMotion and not _main_drag.is_empty():
+		_drag_main(event.position)
+		get_viewport().set_input_as_handled()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_F:
 			_reset_camera()
 		elif event.keycode == KEY_DELETE:
 			_delete_selected()
+
+func _over_ui(position: Vector2) -> bool:
+	if plan_editor.get_global_rect().has_point(position):
+		return true
+	if right_panel != null and right_panel.get_global_rect().has_point(position):
+		return true
+	if detail_plan_editor != null and detail_plan_editor.get_global_rect().has_point(position):
+		return true
+	return false
+
+func _drag_main(screen_position: Vector2) -> void:
+	var value := gizmos.drag_value(_main_drag, screen_position)
+	if value.is_empty():
+		return
+	var bridge := plan.get_skybridge(_main_drag["bridge_id"])
+	if bridge == null:
+		return
+	match String(_main_drag["kind"]):
+		"handle":
+			var meta: Dictionary = _main_drag["meta"]
+			bridge.set_node_handle(int(meta["index"]), meta["handle"], value["offset"])
+			_sync_skybridges()
+		"width":
+			_on_bridge_section_changed(bridge.id, &"width", value["width"])
+		"height":
+			_on_bridge_section_changed(bridge.id, &"height", value["height"])
+	plan_editor.set_plan(plan)
+	if detail_plan_editor != null:
+		detail_plan_editor.set_plan(plan)
+
+func _finish_main_drag() -> void:
+	var bridge_id: StringName = _main_drag["bridge_id"]
+	var bridge := plan.get_skybridge(bridge_id)
+	if bridge != null and not _main_drag_before.is_empty():
+		var after := _bridge_snapshot(bridge)
+		var action_name := "拖动贝塞尔手柄" if _main_drag["kind"] == "handle" else "调整廊桥截面"
+		_register_bridge_action(action_name, bridge_id, _main_drag_before, after,
+			&"main_drag_bridge:%s" % bridge_id)
+		status_label.text = "手柄编辑已提交；交叉合并与错开已重新求解。"
+	_main_drag = {}
+	_main_drag_before = {}
 
 func _update_camera() -> void:
 	if camera == null:

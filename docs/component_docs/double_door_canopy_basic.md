@@ -6,7 +6,7 @@
 
 - **资源**：`assets/building_components/double_door_canopy_basic.tres`，角色 `DOUBLE_DOOR`，几何 `DOUBLE_DOOR`，尺寸 2.05 × 2.55 × 1.05 m，框架宽 0.12 m。
 - **材质槽**：门框（`building/entrance/double_frame`）、双门板（`building/entrance/double_panels`）。
-- **结构**：门框、双门板和遮阳顶共用同一原点，包含真实几何而非贴图表达。
+- **结构**：门框、双门板和遮阳顶共用同一原点，包含真实几何而非贴图表达；遮阳顶斜撑从墙面连接至外缘。
 - **启用方式**：由 `use_double_entrance` 显式替换普通单门入口；双门遮阳顶纳入占用检查。
 
 ## 修改记录

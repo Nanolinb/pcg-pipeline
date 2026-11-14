@@ -135,6 +135,15 @@ func _test_doorway_cut(catalog: PCGBuildingComponentCatalog) -> void:
 	_check(doorway_frames == 1, "建筑侧只保留自身入口，连廊门套应由廊桥生成")
 	plain["root"].free()
 	cut["root"].free()
+	var linked := _crossing_plan(catalog)
+	var linked_gen := PCGBuildingGenerator.new()
+	var west_fp := linked.get_footprint(&"west")
+	linked.get_connector(&"c1").edge_t = 0.5
+	linked.get_skybridge(&"bridge_1").width = 3.0
+	var openings := linked_gen._facade_openings(west_fp, west_fp.normalized_polygon(),
+		west_fp.height(), [linked.get_connector(&"c1")], linked)
+	_check(openings.size() == 1 and openings[0]["s1"] - openings[0]["s0"] >= 3.0,
+		"门洞宽度应跟随廊桥截面调整")
 
 func _test_node_editing() -> void:
 	var bridge := PCGSkybridgeDefinition.new()
@@ -325,6 +334,34 @@ func _test_workbench_integration() -> void:
 	_check(workbench.plan.get_skybridge(&"bridge_demo").nodes.size() == 3, "减少节点应移除内部节点")
 	workbench.undo_redo.undo()
 	_check(workbench.plan.get_skybridge(&"bridge_demo").nodes.size() == 4, "撤销应恢复被删节点")
+	_check(workbench.gizmos.grips.size() > 0, "主视图应生成截面与贝塞尔手柄")
+	var first_grip: Dictionary = workbench.gizmos.grips[0]
+	var grip_screen: Vector2 = workbench.camera.unproject_position(first_grip["position"])
+	var picked: Dictionary = workbench.gizmos.pick(grip_screen)
+	_check(not picked.is_empty() and picked["bridge_id"] == first_grip["bridge_id"],
+		"主视图拾取应命中手柄位置")
+	var handle_grip := {}
+	for grip in workbench.gizmos.grips:
+		if grip["kind"] == "handle":
+			handle_grip = grip
+			break
+	if not handle_grip.is_empty():
+		var drag: Dictionary = workbench.gizmos.drag_value(handle_grip,
+			workbench.camera.unproject_position(handle_grip["position"]))
+		_check(drag.has("offset"), "贝塞尔手柄拖拽应返回偏移向量")
+	else:
+		_check(false, "应存在贝塞尔手柄握把")
+	var section_grip := {}
+	for grip in workbench.gizmos.grips:
+		if grip["kind"] == "width":
+			section_grip = grip
+			break
+	if not section_grip.is_empty():
+		var drag: Dictionary = workbench.gizmos.drag_value(section_grip,
+			workbench.camera.unproject_position(section_grip["position"]))
+		_check(drag.has("width"), "截面宽度拖拽应返回宽度数值")
+	else:
+		_check(false, "应存在截面宽度握把")
 	workbench._on_bridge_node_selected(&"bridge_demo", 0)
 	workbench._on_node_height_changed(3.0 * 2.6)
 	_check(workbench.plan.get_connector(&"conn_l_tower").floor == 3,
@@ -417,8 +454,8 @@ func _total_windows(building: Node3D) -> int:
 	return count
 
 func _finish() -> void:
-	if checks != 88:
-		failures.append("实际执行检查数 %d 与预期 88 不符，可能存在脚本错误中断了测试" % checks)
+	if checks != 93:
+		failures.append("实际执行检查数 %d 与预期 93 不符，可能存在脚本错误中断了测试" % checks)
 	if failures.is_empty():
 		print("SKYBRIDGE_TEST_RESULT: PASS checks=%d" % checks)
 		quit(0)
