@@ -214,7 +214,7 @@ func _build_ui() -> void:
 	_mode_button(left, "模式：增加节点", PCGBuildingPlanEditor.InteractionMode.BRIDGE_ADD,
 		"增加节点模式：点击桥曲线即在最近位置插入一个节点；按钮保持高亮，可连续添加。")
 	_mode_button(left, "模式：减少节点", PCGBuildingPlanEditor.InteractionMode.BRIDGE_REMOVE,
-		"减少节点模式：点击内部节点即删除；连接结合点的两端端点不可删除。")
+		"减少节点模式：点击内部节点删除该节点；点击起点或终点则删除整条廊桥及其两端入口（可撤销）。")
 	_mode_buttons[PCGBuildingPlanEditor.InteractionMode.FOOTPRINT].set_pressed_no_signal(true)
 	connector_floor_spin = _spin_row(left, "结合点楼层", 0.0, 11.0, 1.0)
 	connector_floor_spin.value = 1.0
