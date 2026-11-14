@@ -20,6 +20,7 @@ func _run() -> void:
 	_test_node_editing()
 	_test_cross_merge_and_lift(generator, catalog)
 	_test_sloped_bridge(generator, catalog)
+	_test_section_isolation(generator, catalog)
 	_test_determinism(generator, catalog)
 	await _test_workbench_integration()
 	_finish()
@@ -258,6 +259,33 @@ func _test_cross_merge_and_lift(generator: PCGSkybridgeGenerator, catalog: PCGBu
 	_check(third["junctions"].size() == 1, "重叠 70%（超过 60%）的交叉仍应合并")
 	third["root"].free()
 
+# 截面调整隔离：修改一座桥的宽高，其他桥的数据与网格必须保持不变。
+func _test_section_isolation(generator: PCGSkybridgeGenerator, catalog: PCGBuildingComponentCatalog) -> void:
+	var plan := _crossing_plan(catalog)
+	var first_bridge := plan.get_skybridge(&"bridge_1")
+	var second_bridge := plan.get_skybridge(&"bridge_2")
+	var second_before := PCGCanonicalSerializer.hash_document(second_bridge.semantic_data())
+	var before_root := generator.build_network(plan, catalog)
+	var before_aabb := AABB()
+	for child in before_root["root"].get_children():
+		if child.get_meta("bridge_id", &"") == &"bridge_2":
+			before_aabb = child.mesh.get_aabb()
+	first_bridge.width = 4.0
+	first_bridge.height = 5.0
+	var after_root := generator.build_network(plan, catalog)
+	_check(is_equal_approx(second_bridge.width, 2.0) and is_equal_approx(second_bridge.height, 3.0),
+		"调整一座桥截面不应改变其他桥的宽高数据")
+	_check(PCGCanonicalSerializer.hash_document(second_bridge.semantic_data()) == second_before,
+		"调整一座桥截面不应改变其他桥的语义摘要")
+	var second_visual: MeshInstance3D = null
+	for child in after_root["root"].get_children():
+		if child.get_meta("bridge_id", &"") == &"bridge_2":
+			second_visual = child
+	_check(second_visual != null and second_visual.mesh.get_aabb().is_equal_approx(before_aabb),
+		"调整一座桥截面不应改变其他桥的网格")
+	before_root["root"].free()
+	after_root["root"].free()
+
 func _test_determinism(generator: PCGSkybridgeGenerator, catalog: PCGBuildingComponentCatalog) -> void:
 	var plan := PCGBuildingPlan.demo()
 	var first := _connector(&"conn_a", &"house_l", 1, 0.5, 1)
@@ -474,8 +502,8 @@ func _total_windows(building: Node3D) -> int:
 	return count
 
 func _finish() -> void:
-	if checks != 100:
-		failures.append("实际执行检查数 %d 与预期 100 不符，可能存在脚本错误中断了测试" % checks)
+	if checks != 103:
+		failures.append("实际执行检查数 %d 与预期 103 不符，可能存在脚本错误中断了测试" % checks)
 	if failures.is_empty():
 		print("SKYBRIDGE_TEST_RESULT: PASS checks=%d" % checks)
 		quit(0)
