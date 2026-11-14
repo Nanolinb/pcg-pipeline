@@ -314,6 +314,12 @@ func _test_workbench_integration() -> void:
 	_check(workbench.plan.get_skybridge(&"bridge_demo").nodes.size() == 3, "减少节点应移除内部节点")
 	workbench.undo_redo.undo()
 	_check(workbench.plan.get_skybridge(&"bridge_demo").nodes.size() == 4, "撤销应恢复被删节点")
+	workbench._on_bridge_node_selected(&"bridge_demo", 0)
+	workbench._on_node_height_changed(3.0 * 2.6)
+	_check(workbench.plan.get_connector(&"conn_l_tower").floor == 3,
+		"端点高度调整应换算为楼层写回结合点")
+	_check(is_equal_approx(workbench.plan.get_skybridge(&"bridge_demo").node_positions()[0].y, 7.8),
+		"桥端点应随高度调整升到新楼层")
 	workbench.undo_redo.clear_history()
 	workbench.queue_free()
 	await process_frame
@@ -389,8 +395,8 @@ func _total_windows(building: Node3D) -> int:
 	return count
 
 func _finish() -> void:
-	if checks != 81:
-		failures.append("实际执行检查数 %d 与预期 81 不符，可能存在脚本错误中断了测试" % checks)
+	if checks != 83:
+		failures.append("实际执行检查数 %d 与预期 83 不符，可能存在脚本错误中断了测试" % checks)
 	if failures.is_empty():
 		print("SKYBRIDGE_TEST_RESULT: PASS checks=%d" % checks)
 		quit(0)

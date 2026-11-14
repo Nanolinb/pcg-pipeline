@@ -529,11 +529,17 @@ func _on_connector_floor_changed(value: float) -> void:
 	var connector := plan.get_connector(selected_connector_id)
 	if connector == null:
 		return
+	var floor := _apply_connector_floor(connector, int(value))
+	if floor >= 0:
+		connector_floor_spin.set_value_no_signal(floor)
+
+# 写回结合点楼层并联动已连接廊桥端点；返回实际生效楼层（失败返回 -1）。
+func _apply_connector_floor(connector: PCGSkybridgeConnector, floor_value: int) -> int:
 	var footprint := plan.get_footprint(connector.building_id)
 	if footprint == null:
-		return
+		return -1
 	var before := _plan_snapshot()
-	connector.floor = clampi(int(value), 0, footprint.floors - 1)
+	connector.floor = clampi(floor_value, 0, footprint.floors - 1)
 	# 已连接的廊桥端点随结合点楼层移动，中间节点保持在两端中点。
 	var anchor := connector.anchor(footprint)
 	var end_position: Vector3 = anchor["position"] - anchor["outward"] * SkybridgeGen.RECESS_DEPTH
@@ -553,6 +559,7 @@ func _on_connector_floor_changed(value: float) -> void:
 	_sync_plan()
 	_register_plan_action("修改结合点楼层", before, _plan_snapshot(), &"connector_floor:%s" % connector.id)
 	status_label.text = "结合点 %s 楼层已改为 F%d；门洞与已连接廊桥已联动。" % [connector.id, connector.floor]
+	return connector.floor
 
 func _on_connector_placed(building_id: StringName, edge_index: int, edge_t: float) -> void:
 	var footprint := plan.get_footprint(building_id)
@@ -737,10 +744,23 @@ func _on_node_height_changed(value: float) -> void:
 	var bridge := plan.get_skybridge(selected_bridge_id)
 	if bridge == null or selected_node_index < 0:
 		return
+	var index := selected_node_index
+	if index == 0 or index == bridge.nodes.size() - 1:
+		# 端点与结合点绑定：高度换算为楼层写回结合点，端点、门洞与廊桥一起移动。
+		var connector_id := bridge.connector_a if index == 0 else bridge.connector_b
+		var connector := plan.get_connector(connector_id)
+		var footprint := plan.get_footprint(connector.building_id) if connector != null else null
+		if connector != null and footprint != null and footprint.floor_height > 0.0:
+			var floor := _apply_connector_floor(connector, roundi(value / footprint.floor_height))
+			if floor >= 0:
+				selected_connector_id = connector.id
+				connector_floor_spin.set_value_no_signal(floor)
+				node_height_spin.set_value_no_signal(floor * footprint.floor_height)
+				return
 	var before := _bridge_snapshot(bridge)
-	var position: Vector3 = bridge.nodes[selected_node_index].get("position", Vector3.ZERO)
+	var position: Vector3 = bridge.nodes[index].get("position", Vector3.ZERO)
 	position.y = value
-	bridge.set_node_position(selected_node_index, position)
+	bridge.set_node_position(index, position)
 	_after_bridge_edit("调整桥面高度", bridge, before)
 
 func _after_bridge_edit(name: String, bridge: PCGSkybridgeDefinition, before: Dictionary) -> void:
