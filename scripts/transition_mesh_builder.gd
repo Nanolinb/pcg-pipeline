@@ -43,40 +43,41 @@ static func build(component: Node3D) -> ArrayMesh:
 	rings.append(inner_bottom)
 	rings.append(outer_bottom)
 	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
 	var indices := PackedInt32Array()
-	for ring in rings:
-		for point in ring:
-			vertices.append(point)
-	for ring_index in range(rings.size() - 1):
+	for ring_index in range(profile_steps + 1):
+		var ring: Array = rings[ring_index]
+		var previous_ring: Array = rings[maxi(ring_index - 1, 0)]
+		var next_ring: Array = rings[mini(ring_index + 1, profile_steps)]
+		for i in segments:
+			var previous := (i - 1 + segments) % segments
+			var next := (i + 1) % segments
+			var outline_tangent: Vector3 = ring[next] - ring[previous]
+			var profile_tangent: Vector3 = next_ring[i] - previous_ring[i]
+			vertices.append(ring[i])
+			normals.append(outline_tangent.cross(profile_tangent).normalized())
+	for ring_index in profile_steps:
 		for i in segments:
 			var next := (i + 1) % segments
 			var a := ring_index * segments + i
 			var b := ring_index * segments + next
 			var c := (ring_index + 1) * segments + i
 			var d := (ring_index + 1) * segments + next
-			_add_quad(indices, a, b, c, d, ring_index == profile_steps)
-	var last_ring := rings.size() - 1
+			indices.append_array(PackedInt32Array([a, c, b, b, c, d]))
 	for i in segments:
 		var next := (i + 1) % segments
-		_add_quad(indices, last_ring * segments + i, last_ring * segments + next, i, next, true)
-	if definition.shape == PCGComponentDefinition.Shape.ARCH_WINDOW:
-		for i in range(0, indices.size(), 3):
-			var swap := indices[i + 1]
-			indices[i + 1] = indices[i + 2]
-			indices[i + 2] = swap
-	var normals := PackedVector3Array()
-	for vertex_index in vertices.size():
-		var ring_index := vertex_index / segments
-		var outline_index := vertex_index % segments
-		var normal := Vector3.DOWN
-		if ring_index <= profile_steps:
-			var radial := Vector3(
-				outer_top[outline_index].x - inner_top[outline_index].x,
-				outer_top[outline_index].y - inner_top[outline_index].y,
-				0.0
-			).normalized()
-			normal = (radial + Vector3.BACK * (transition_height / maxf(thickness, 0.001))).normalized()
-		normals.append(normal)
+		var inner_wall := PackedVector3Array([
+			inner_top[i], inner_bottom[i], inner_bottom[next], inner_top[next]
+		])
+		_append_quad(vertices, normals, indices, inner_wall, _quad_normals(inner_wall))
+		var bottom := PackedVector3Array([
+			inner_bottom[i], outer_bottom[i], outer_bottom[next], inner_bottom[next]
+		])
+		_append_quad(vertices, normals, indices, bottom, _quad_normals(bottom))
+		var outer_wall := PackedVector3Array([
+			outer_bottom[i], outer_top[i], outer_top[next], outer_bottom[next]
+		])
+		_append_quad(vertices, normals, indices, outer_wall, _quad_normals(outer_wall))
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
@@ -117,8 +118,16 @@ static func _host_point(component: Node3D, outline: Vector2) -> Dictionary:
 		"normal": (component_transform.basis.inverse() * host_transform.basis.z).normalized(),
 	}
 
-static func _add_quad(indices: PackedInt32Array, a: int, b: int, c: int, d: int, reverse: bool) -> void:
-	if reverse:
-		indices.append_array(PackedInt32Array([a, b, c, b, d, c]))
-	else:
-		indices.append_array(PackedInt32Array([a, c, b, b, c, d]))
+static func _quad_normals(points: PackedVector3Array) -> PackedVector3Array:
+	var normals := PackedVector3Array()
+	for i in points.size():
+		var previous := points[(i - 1 + points.size()) % points.size()] - points[i]
+		var next := points[(i + 1) % points.size()] - points[i]
+		normals.append(previous.cross(next).normalized())
+	return normals
+
+static func _append_quad(vertices: PackedVector3Array, normals: PackedVector3Array, indices: PackedInt32Array, points: PackedVector3Array, face_normals: PackedVector3Array) -> void:
+	var base := vertices.size()
+	vertices.append_array(points)
+	normals.append_array(face_normals)
+	indices.append_array(PackedInt32Array([base, base + 1, base + 2, base, base + 2, base + 3]))

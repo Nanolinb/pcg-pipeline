@@ -176,6 +176,9 @@ func run() -> void:
 	_smoke_check(main.cylinder_host.base_shapes.size() == 2 and main.cylinder_host.outline_parts.size() == 2, "组合主体应包含圆柱、半球实体与轮廓")
 	_smoke_check(cylinder_round.transition_shape != null and cylinder_round.effective_transition_thickness() > 0.0, "曲面组件应生成自适应包裹过渡")
 	_smoke_check(_mesh_is_closed(cylinder_round.transition_shape.mesh), "包裹过渡应为封闭水密 Mesh")
+	_smoke_check(_mesh_signed_volume(cylinder_round.transition_shape.mesh) < 0.0, "圆形过渡的三角形绕序必须朝向实体外侧")
+	_smoke_check(_mesh_has_consistent_winding(cylinder_round.transition_shape.mesh), "圆形过渡相邻三角形必须沿共享边反向通过")
+	_smoke_check(_mesh_normals_match_faces(cylinder_round.transition_shape.mesh), "圆形过渡的每个三角形法线必须与几何朝向一致")
 	var transition_arrays := cylinder_round.transition_shape.mesh.surface_get_arrays(0)
 	_smoke_check(transition_arrays[Mesh.ARRAY_NORMAL][0].z > 0.0, "过渡顶面法线必须朝向正 Z 外侧")
 	var has_outward_transition := false
@@ -218,12 +221,23 @@ func run() -> void:
 	_smoke_check(_mesh_is_closed(arch_window.cutter.mesh), "拱形开洞体必须封闭")
 	_smoke_check(_mesh_signed_volume(arch_window.cutter.mesh) < 0.0, "拱形开洞体必须使用朝外法线")
 	_smoke_check(_mesh_is_closed(arch_window.transition_shape.mesh), "拱形根部过渡必须封闭")
+	_smoke_check(_mesh_signed_volume(arch_window.transition_shape.mesh) < 0.0, "拱形过渡的三角形绕序必须朝向实体外侧")
+	_smoke_check(_mesh_has_consistent_winding(arch_window.transition_shape.mesh), "拱形过渡相邻三角形必须沿共享边反向通过")
+	_smoke_check(_mesh_normals_match_faces(arch_window.transition_shape.mesh), "拱形过渡的每个三角形法线必须与几何朝向一致")
 	transition_arrays = arch_window.transition_shape.mesh.surface_get_arrays(0)
 	var upward_normal_count := 0
 	for normal in transition_arrays[Mesh.ARRAY_NORMAL] as PackedVector3Array:
 		if normal.z > 0.1:
 			upward_normal_count += 1
 	_smoke_check(upward_normal_count > transition_arrays[Mesh.ARRAY_NORMAL].size() / 4, "过渡顶面法线必须朝向主体外侧")
+	arch_window.transition_curvature = -1.0
+	arch_window.attachment_angle_degrees = 25.0
+	arch_window.update_transform()
+	_smoke_check(_mesh_has_consistent_winding(arch_window.transition_shape.mesh), "负弧度倾斜拱形过渡必须保持一致绕序")
+	_smoke_check(_mesh_normals_match_faces(arch_window.transition_shape.mesh), "负弧度倾斜拱形过渡的法线必须与几何朝向一致")
+	arch_window.transition_curvature = 0.65
+	arch_window.attachment_angle_degrees = 0.0
+	arch_window.update_transform()
 	var arch_full_vertices: int = arch_window.transition_shape.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size()
 	arch_window.transition_density = 0.25
 	arch_window.update_transform()
@@ -355,6 +369,57 @@ func _mesh_signed_volume(mesh: Mesh) -> float:
 		for i in range(0, indices.size(), 3):
 			volume += vertices[indices[i]].dot(vertices[indices[i + 1]].cross(vertices[indices[i + 2]])) / 6.0
 	return volume
+
+func _mesh_has_consistent_winding(mesh: Mesh) -> bool:
+	if mesh == null:
+		return false
+	var edges: Dictionary = {}
+	for surface in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		if indices.is_empty():
+			for i in vertices.size():
+				indices.append(i)
+		for i in range(0, indices.size(), 3):
+			for corner in 3:
+				var a := str(vertices[indices[i + corner]])
+				var b := str(vertices[indices[i + (corner + 1) % 3]])
+				var key := a + "|" + b if a < b else b + "|" + a
+				var edge: Array = edges.get(key, [0, 0])
+				edge[0] += 1
+				edge[1] += 1 if a < b else -1
+				edges[key] = edge
+	for edge in edges.values():
+		if edge[0] != 2 or edge[1] != 0:
+			return false
+	return not edges.is_empty()
+
+func _mesh_normals_match_faces(mesh: Mesh) -> bool:
+	if mesh == null:
+		return false
+	for surface in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		if indices.is_empty():
+			for i in vertices.size():
+				indices.append(i)
+		if normals.size() != vertices.size():
+			return false
+		for i in range(0, indices.size(), 3):
+			var a := indices[i]
+			var b := indices[i + 1]
+			var c := indices[i + 2]
+			var outward := -(vertices[b] - vertices[a]).cross(vertices[c] - vertices[a]).normalized()
+			if outward.length_squared() < 0.5:
+				return false
+			var shading := (normals[a] + normals[b] + normals[c]).normalized()
+			if shading.dot(outward) <= 0.0:
+				print("NORMAL_MISMATCH surface=%d triangle=%d dot=%.6f shading=%s outward=%s" % [surface, i / 3, shading.dot(outward), shading, outward])
+				return false
+	return true
 
 func _smoke_check(condition: bool, message: String) -> void:
 	if not condition:
