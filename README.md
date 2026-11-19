@@ -17,6 +17,8 @@
 - 12 份标准组件：木框窗、入口门、双门带遮阳顶、女儿墙、墙角立柱、布艺遮阳棚、小阳台、屋顶检修屋、屋顶晾衣架、窗外晾衣杆（空杆/有衣物）、标准廊桥。
 - 确定性：每栋建筑独立随机流；单栋编辑只重建该栋；非法轮廓保留上一份有效显示。
 - 立面求解：入口优先预留，门窗与装饰统一占用/角点求解，凹角净空，屋顶完整占地验证。
+- 墙板单元数据：按每边/每楼层与可配置 `wall_panel_width`（工程默认 1.75 m，非冻结模数）划分派生墙板 slot（solid/window/door/passage/corner）；默认 `wall_panels_fused=true` 保持 DerivedSolid 单一融合网格，可切换为按 slot 分组的 WallPanels 预览（带 slot_id/panel_kind metadata）。
+- 派生墙板是预览/中间数据，不是可直接发布的封闭标准资产；门窗本体仍由标准组件生成，默认显示与廊桥行为保持兼容。
 - 组件扩展规则见 `docs/building_component_authoring.md`。
 
 ### 廊桥连接系统
@@ -43,6 +45,7 @@
 
 详见 `docs/changelog.md`（按日期倒序），近两条摘要：
 
+- **2026-11-20 · 墙板单元数据与融合/预览双显示（P0 切片）**：`PCGBuildingFootprint` 新增 `wall_panel_width`（工程默认 1.75 m）与 `wall_panels_fused`；派生墙板稳定 slot 数据与 WallPanels 预览，默认融合保持 DerivedSolid 兼容；详见 `docs/component_docs/building_generator.md`。
 - **2026-11-14 · 主视图截面与贝塞尔手柄、门洞随截面联动**：廊桥主视图横截面握把与贝塞尔手柄编辑；门洞/门套宽高跟随桥截面；版本统一为 0.16.3。
 - **2026-11-14 · 组件文档体系与流程固化**：新增 `docs/component_docs/` 组件文档（目标 + 修改记录结构）；`AGENTS.md` 固化修改记录与腾讯文档同步流程。
 - **2026-11-14 · 代码审查、共享原语与编辑器解耦**：生成与资产契约修复、共享网格原语/表面数学去重、工作台拆出 BuildingPlanSession 与 FootprintGeometryOps、架构检查纳入门禁。
@@ -53,7 +56,13 @@
 ./tools/run_gate.sh   # 双工程版本检查 + 全部 headless 回归门禁
 ```
 
-当前门禁规模：建筑 111 项、廊桥 71 项、宿主 224 项，完整门禁全绿。历史发布与验收证据见 `docs/releases/` 与 `reports/`。
+当前门禁规模：建筑 125 项、墙板 55 项、廊桥 112 项、宿主 224 项，并覆盖 PipeWeaver、资产任务与标准化等完整门禁。历史发布与验收证据见 `docs/releases/` 与 `reports/`。
+
+墙板真实输入与视口截图可单独复验：
+
+```bash
+godot --path . -s scripts/tests/run_wall_panel_graphical_test.gd
+```
 
 ## 文档导航
 

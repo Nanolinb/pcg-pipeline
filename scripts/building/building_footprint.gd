@@ -19,6 +19,8 @@ extends Resource
 @export var balcony_component_id: StringName = &"balcony_basic"
 @export var double_door_component_id: StringName = &"double_door_canopy_basic"
 @export var use_double_entrance: bool = false
+@export_range(0.4, 4.0, 0.05) var wall_panel_width: float = 1.75
+@export var wall_panels_fused: bool = true
 var ground_elevation: float = 0.0
 
 func normalized_polygon() -> PackedVector2Array:
@@ -45,6 +47,8 @@ func validation_errors() -> PackedStringArray:
 		return errors
 	if absf(signed_area(normalized)) < 0.05:
 		errors.append("平面轮廓面积必须大于 0.05 平方米。")
+	if wall_panel_width < 0.4 or wall_panel_width > 4.0:
+		errors.append("墙板宽度必须在 0.4 到 4.0 米之间。")
 	for index in normalized.size():
 		var next := (index + 1) % normalized.size()
 		if normalized[index].distance_to(normalized[next]) < 0.05:
@@ -73,6 +77,8 @@ func semantic_data() -> Dictionary:
 		"seed": seed,
 		"wall_material_id": String(wall_material_id),
 		"use_double_entrance": use_double_entrance,
+		"wall_panel_width": wall_panel_width,
+		"wall_panels_fused": wall_panels_fused,
 		"components": [
 			String(window_component_id), String(door_component_id),
 			String(parapet_component_id), String(corner_component_id),

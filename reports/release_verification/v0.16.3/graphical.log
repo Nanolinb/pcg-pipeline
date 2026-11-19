@@ -1,0 +1,6 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+OpenGL API 4.1 Metal - 90.5 - Compatibility - Using Device: Apple - Apple M3 Pro
+
+WALL_PANEL_CAPTURE: /Users/shaunlin/Kimi Space/PCG管道/reports/release_verification/v0.16.3/wall_panel_preview.png
+WALL_PANEL_CAPTURE: /Users/shaunlin/Kimi Space/PCG管道/reports/release_verification/v0.16.3/wall_panel_fused.png
+WALL_PANEL_GRAPHICAL_RESULT: PASS checks=15

@@ -75,6 +75,7 @@ run_test "project versions" run_versions
 run_test "architecture guard" python3 "$ROOT_DIR/tools/check_architecture.py"
 run_logged_test "Surface Component headless smoke" "PCG_SMOKE_TEST_PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s scripts/tests/run_smoke_test.gd
 run_logged_test "building plan workbench" "BUILDING_TEST_RESULT: PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s scripts/tests/run_building_test.gd
+run_logged_test "wall panel unit data" "WALL_PANEL_TEST_RESULT: PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s scripts/tests/run_wall_panel_test.gd
 run_logged_test "skybridge network" "SKYBRIDGE_TEST_RESULT: PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR" -s scripts/tests/run_skybridge_test.gd
 run_logged_test "PipeWeaver headless smoke" "PIPE_SMOKE_PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR/PipeWeaver" res://tests/pipeweaver_smoke.tscn
 run_logged_test "PipeWeaver preset catalog" "PRESET_CATALOG_RESULT: PASS" "$GODOT_BIN" --headless --path "$ROOT_DIR/PipeWeaver" res://tests/pipe_preset_catalog_test.tscn

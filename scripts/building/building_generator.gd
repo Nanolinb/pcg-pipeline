@@ -64,14 +64,18 @@ func build_building(footprint: PCGBuildingFootprint, master_seed: String,
 		foundation.mesh = MeshFactory.foundation(polygon, terrain, base_elevation)
 		foundation.material_override = preload("res://addons/pcg_shared/pcg_material_access.gd").library().solid(&"building/foundation", Color("675f52"), 0.94)
 		root.add_child(foundation)
-	var body := MeshInstance3D.new()
-	body.name = "DerivedSolid"
-	body.mesh = MeshFactory.extrude(polygon, height, _facade_openings(footprint, polygon, height, connectors, terrain))
-	body.material_override = preload("res://addons/pcg_shared/pcg_material_access.gd").library().solid(
+	var wall_material: Material = preload("res://addons/pcg_shared/pcg_material_access.gd").library().solid(
 		footprint.wall_material_id, footprint.wall_color, 0.88, 0.0, &"preserve", 1.0
 	)
-	body.set_meta("footprint_id", footprint.id)
-	root.add_child(body)
+	var passage_openings := _facade_openings(footprint, polygon, height, connectors, terrain)
+	var body: MeshInstance3D = null
+	if footprint.wall_panels_fused:
+		body = MeshInstance3D.new()
+		body.name = "DerivedSolid"
+		body.mesh = MeshFactory.extrude(polygon, height, passage_openings)
+		body.material_override = wall_material
+		body.set_meta("footprint_id", footprint.id)
+		root.add_child(body)
 	var components := Node3D.new()
 	components.name = "StandardComponents"
 	root.add_child(components)
@@ -89,6 +93,7 @@ func build_building(footprint: PCGBuildingFootprint, master_seed: String,
 	var drying_variants := catalog.in_role(Definition.Role.WINDOW_DRYING_ROD)
 	var entrance := _choose_entrance(polygon, door, window, footprint.id, obstacles, base_elevation)
 	var occupied: Array[Dictionary] = []
+	var placed_openings: Array[Dictionary] = []
 	if entrance.has("bounds"):
 		occupied.append({"bounds": entrance["bounds"], "host_id": &"entrance"})
 	var diagnostics := {"rejected": 0}
@@ -132,6 +137,14 @@ func build_building(footprint: PCGBuildingFootprint, master_seed: String,
 				if is_door:
 					count += _add_component(components, definition, transform,
 						Vector3.ONE * scale_factor, footprint.id)
+					var door_s := _edge_s(a, b, transform.origin)
+					placed_openings.append({
+						"edge_index": edge_index, "kind": &"door",
+						"s0": door_s - definition.size.x * scale_factor * 0.5,
+						"s1": door_s + definition.size.x * scale_factor * 0.5,
+						"y0": center_y - definition.size.y * scale_factor * 0.5,
+						"y1": center_y + definition.size.y * scale_factor * 0.5,
+					})
 					continue
 				var placed := _add_facade_component(components, definition, transform,
 					Vector3.ONE * scale_factor, footprint.id, base_elevation, polygon, edge_index, t,
@@ -139,6 +152,14 @@ func build_building(footprint: PCGBuildingFootprint, master_seed: String,
 				if placed == 0:
 					continue
 				count += placed
+				var window_s := _edge_s(a, b, transform.origin)
+				placed_openings.append({
+					"edge_index": edge_index, "kind": &"window",
+					"s0": window_s - definition.size.x * scale_factor * 0.5,
+					"s1": window_s + definition.size.x * scale_factor * 0.5,
+					"y0": center_y - definition.size.y * scale_factor * 0.5,
+					"y1": center_y + definition.size.y * scale_factor * 0.5,
+				})
 				if floor_index == 0:
 					if random.randf() < 0.24:
 						var awning_y := center_y + window.size.y * scale_factor * 0.5 + 0.22
@@ -168,8 +189,36 @@ func build_building(footprint: PCGBuildingFootprint, master_seed: String,
 		count += _add_component(components, roof_drying, drying_transform["transform"], Vector3.ONE, footprint.id)
 	else:
 		diagnostics["rejected"] += 1
+	# 派生墙板布局：门窗开口来自上面实际放置成功的组件，passage 来自 connector 门洞；
+	# 两种显示模式共用同一份布局数据，只影响墙面显示，不改变组件与廊桥。
+	var layout_inputs: Array = []
+	for opening in passage_openings:
+		var entry: Dictionary = opening.duplicate()
+		entry["kind"] = &"passage"
+		layout_inputs.append(entry)
+	layout_inputs.append_array(placed_openings)
+	var layout := PCGWallPanelLayout.build(String(footprint.id), polygon, footprint.floors,
+		footprint.floor_height, footprint.wall_panel_width, layout_inputs)
+	if not layout["errors"].is_empty():
+		root.free()
+		return {"root": null, "errors": layout["errors"]}
+	root.set_meta("wall_panel_count", layout["panels"].size())
+	root.set_meta("wall_panel_fused", footprint.wall_panels_fused)
+	root.set_meta("wall_panel_summary", PCGWallPanelLayout.kind_summary(layout["panels"]))
+	var wall_panels_node: Node3D = null
+	var wall_caps: MeshInstance3D = null
+	if not footprint.wall_panels_fused:
+		wall_panels_node = _build_wall_panels(footprint, polygon, layout["panels"], wall_material)
+		root.add_child(wall_panels_node)
+		wall_caps = MeshInstance3D.new()
+		wall_caps.name = "WallCaps"
+		wall_caps.mesh = MeshFactory.caps(polygon, height, passage_openings)
+		wall_caps.material_override = wall_material
+		root.add_child(wall_caps)
 	root.set_meta("component_count", count)
-	root.set_meta("triangle_count", MeshBuildUtil.triangle_count(body.mesh) + _component_triangles(components))
+	var wall_triangles := MeshBuildUtil.triangle_count(body.mesh) if body != null \
+		else _mesh_instance_triangles(wall_panels_node) + MeshBuildUtil.triangle_count(wall_caps.mesh)
+	root.set_meta("triangle_count", wall_triangles + _component_triangles(components))
 	# 与 PCGBuildingPlan.facade_signature_for 保持一致：增量重建的脏检查才能识别避让区变化。
 	var connector_data: Array = []
 	for connector in connectors:
@@ -187,6 +236,8 @@ func build_building(footprint: PCGBuildingFootprint, master_seed: String,
 # 结合点在立面上占用的边内区间；exclusions 元素为 connector.exclusion() 的结果。
 const DOORWAY_DEPTH := 0.45
 const DOORWAY_MARGIN := 0.15
+# 角部墙板对应的角柱语义占位尺寸（与标准角柱同为贴柱显示，不是可发布的封闭资产）。
+const CORNER_PANEL_SIZE := 0.16
 
 # 结合点 → 主体挤出的门洞参数（内凹洞道，裁切楼面主体）。
 func _facade_openings(footprint: PCGBuildingFootprint, polygon: PackedVector2Array,
@@ -511,3 +562,83 @@ func _component_triangles(parent: Node3D) -> int:
 		if child is MeshInstance3D and child.mesh != null:
 			count += MeshBuildUtil.triangle_count(child.mesh)
 	return count
+
+func _mesh_instance_triangles(node: Node) -> int:
+	var count := 0
+	for child in node.get_children():
+		if child is MeshInstance3D and child.mesh != null:
+			count += MeshBuildUtil.triangle_count(child.mesh)
+		elif child is Node:
+			count += _mesh_instance_triangles(child)
+	return count
+
+# 分片显示：按布局 slot 逐块生成墙面 MeshInstance（passage 板保留真实内凹洞道），
+# 厘米级细缝只用于辨认预览边界；角部生成贴柱盒体，顶底盖板由调用方单独生成。
+# 每块带 slot_id/panel_kind 等 metadata。
+func _build_wall_panels(footprint: PCGBuildingFootprint, polygon: PackedVector2Array,
+			panels: Array, material: Material) -> Node3D:
+	var node := Node3D.new()
+	node.name = "WallPanels"
+	var corner_mesh := MeshBuildUtil.boxes([{
+		"size": Vector3(CORNER_PANEL_SIZE, footprint.floor_height, CORNER_PANEL_SIZE),
+		"center": Vector3(0.0, footprint.floor_height * 0.5, 0.0),
+	}])
+	for panel in panels:
+		var visual := MeshInstance3D.new()
+		visual.material_override = material
+		visual.set_meta("slot_id", panel["slot_id"])
+		visual.set_meta("panel_kind", panel["panel_kind"])
+		visual.set_meta("floor", panel["floor"])
+		if String(panel["panel_kind"]) == "corner":
+			visual.name = "Corner_v%d_f%d" % [panel["vertex_index"], panel["floor"]]
+			visual.mesh = corner_mesh
+			visual.set_meta("edge_index", -1)
+			var center: Vector2 = panel["center"]
+			visual.transform = Transform3D(Basis.IDENTITY, Vector3(center.x, panel["y0"], center.y)
+				+ _vertex_outward(polygon, panel["vertex_index"]) * (CORNER_PANEL_SIZE * 0.5 - 0.02))
+		else:
+			var edge_index: int = panel["edge_index"]
+			var a: Vector2 = polygon[edge_index]
+			var b: Vector2 = polygon[(edge_index + 1) % polygon.size()]
+			var edge := b - a
+			var dir3 := Vector3(edge.x, 0.0, edge.y) / edge.length()
+			var outward := Vector3(edge.y, 0.0, -edge.x).normalized()
+			var panel_width := float(panel["s1"]) - float(panel["s0"])
+			var panel_height := float(panel["y1"]) - float(panel["y0"])
+			var gap := minf(0.01, minf(panel_width, panel_height) * 0.05)
+			var origin := Vector3(a.x, panel["y0"], a.y) + dir3 * (float(panel["s0"]) + gap) \
+				+ Vector3.UP * gap
+			visual.name = "Panel_e%d_f%d_p%d" % [edge_index, panel["floor"], panel["panel_index"]]
+			var local_openings: Array = []
+			if panel.has("opening"):
+				var opening: Dictionary = panel["opening"]
+				local_openings.append({
+					"s0": float(opening["s0"]) - float(panel["s0"]) - gap,
+					"s1": float(opening["s1"]) - float(panel["s0"]) - gap,
+					"y0": float(opening["y0"]) - float(panel["y0"]) - gap,
+					"y1": float(opening["y1"]) - float(panel["y0"]) - gap,
+					"depth": float(opening.get("depth", DOORWAY_DEPTH)),
+					"close_left": bool(opening.get("close_left", true)),
+					"close_right": bool(opening.get("close_right", true)),
+				})
+			visual.mesh = MeshFactory.wall_panel(
+				panel_width - gap * 2.0, panel_height - gap * 2.0, local_openings)
+			visual.transform = Transform3D(Basis(Vector3.UP.cross(outward), Vector3.UP, outward), origin)
+			visual.set_meta("edge_index", edge_index)
+		node.add_child(visual)
+	return node
+
+func _vertex_outward(polygon: PackedVector2Array, vertex: int) -> Vector3:
+	var count := polygon.size()
+	var previous_edge := polygon[vertex] - polygon[(vertex - 1 + count) % count]
+	var next_edge := polygon[(vertex + 1) % count] - polygon[vertex]
+	var outward := Vector3(previous_edge.y, 0.0, -previous_edge.x).normalized() \
+		+ Vector3(next_edge.y, 0.0, -next_edge.x).normalized()
+	return outward.normalized() if outward.length() > 0.0001 else Vector3.FORWARD
+
+func _edge_s(a: Vector2, b: Vector2, origin: Vector3) -> float:
+	var edge := b - a
+	var length := edge.length()
+	if length <= 0.0001:
+		return 0.0
+	return clampf((Vector2(origin.x, origin.z) - a).dot(edge / length), 0.0, length)

@@ -11,9 +11,17 @@
 - **立面求解**：入口优先预留，窗户与装饰（阳台、晾衣杆、遮阳棚、双门遮阳顶）进入同一占用与角点求解；装饰记录宿主窗户槽位；凹角两侧按组件宽度与外伸深度保留净空。
 - **屋顶求解**：按女儿墙厚度和安全间距计算内缩可用区，完整水平占地验证，凹形屋顶用多边形相交面积；屋顶非矩形盖板由主体生成器直接三角化。
 - **门洞交接**：廊桥结合点所在立面裁切内凹门洞（宽 = 结合点宽 + 0.3 m，深 0.45 m），墙面分条、五面洞道，主体保持封闭流形；入口被占时自动挪到最大自由区间。
+- **墙板单元（派生数据）**：按每边、每楼层与 `wall_panel_width`（工程默认 1.75 m，可配置，非美术冻结模数）划分派生墙板 slot（稳定 slot_id、类型 solid/window/door/passage/corner）；`wall_panels_fused=true` 保持 DerivedSolid 融合显示，`wall_panels_fused=false` 输出按 slot 分组的 WallPanels 预览；派生数据不替代平面/门窗/廊桥源数据。
 - **地形**：按轮廓最高点建立水平基准面，低侧生成封闭基础；地形坡度纳入重建签名。
 
 ## 修改记录
+
+### 2026-11-20 · 墙板单元数据与融合/预览双显示（P0 切片）
+- `PCGBuildingFootprint` 新增导出 `wall_panel_width`（工程默认 1.75 m，可在 UI 修改，非美术冻结模数）与 `wall_panels_fused`（默认 true）；二者纳入 semantic_data 与撤销快照。
+- 新增派生墙板布局：稳定 slot_id `wall:{building}:e{edge}:f{floor}:p{panel}` 与 `wall:{building}:v{vertex}:f{floor}`，类型 solid/window/door/passage/corner，按每边、每楼层与 `wall_panel_width` 划分；门窗类型取自生成器实际成功放置的门窗，passage 取自 connector 实际开口，corner 对应现有角柱语义。
+- `wall_panels_fused=true` 继续生成 DerivedSolid 同一完整 MeshInstance，网格、门洞、统计与既有测试行为不变；`false` 时按 slot 分组输出 WallPanels 节点与独立墙板 MeshInstance（带 slot_id/panel_kind 等 metadata），复用共享墙面/洞道网格原语，以厘米级细缝辨认预览边界，屋顶与地面保持封闭整体外观。
+- 门窗按开口中心归属墙板，通道边界纳入分板切点且跨板不生成内部侧壁；墙板局部法线统一为 +Z，与融合墙面和现有组件放置约定一致。
+- 门窗本体继续由 StandardComponents 生成，不复制、不改随机流；单个派生墙板是预览数据，不宣称是可直接发布的封闭标准资产。
 
 ### 2026-11-14 · 主视图中键平移与门洞交接验证
 - 主 3D 视图中键拖动沿相机平面平移，右键继续环绕，顶视图输入保持独立；退出时由 `PCGEditCommandHistory.dispose()` 释放内部 UndoRedo。

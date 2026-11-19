@@ -56,6 +56,10 @@
 - 工作台支持面岛选择、顶点拖动、新增、中心轴切分、删除、楼层/层高/种子编辑和撤销/重做；数值框焦点不得吞掉全局撤销快捷键。
 - 顶视图支持左键拖动空白区域、右键或中键平移；顶视图外右键拖动环绕三维相机，中键拖动平移相机目标点，各输入路径不得互相抢占。
 - 廊桥结合点必须在主体墙面生成真实内凹洞道：洞口宽为结合点宽 +0.3 m、深 0.45 m，包含地面/顶/两侧/背板并保持主体封闭，门套与洞口对齐且不得穿插。
+- `PCGBuildingFootprint` 导出 `wall_panel_width`（工程默认 1.75 m，UI 可改，非美术冻结模数；跨风格模数仍待确认）与 `wall_panels_fused`（默认 true）；二者纳入 semantic_data 与撤销快照，切换只影响显示与派生墙板布局，平面图、组件、connector/廊桥与稳定 ID 不变。
+- 墙板单元是派生数据，不替代平面、门窗与廊桥源数据；slot_id 形如 `wall:{building}:e{edge}:f{floor}:p{panel}` 与 `wall:{building}:v{vertex}:f{floor}`，类型含 solid/window/door/passage/corner，按每边、每楼层和 `wall_panel_width` 划分。
+- `wall_panels_fused=true` 保持 DerivedSolid 同一完整 MeshInstance（既有网格、门洞、统计与测试行为不变）；`false` 时显示按 slot 分组的 WallPanels 节点与独立墙板 MeshInstance（带 slot_id/panel_kind 等 metadata），共享墙面/洞道网格原语，屋顶与地面仍封闭整体外观。
+- 门窗本体继续由 StandardComponents 生成，墙板类型取自实际成功放置的门窗与 connector 实际开口；派生墙板是预览/中间数据，单个派生墙板不宣称是可直接发布的封闭标准资产。
 - 顶视图支持 25%～800% 光标中心滚轮缩放、按钮缩放和一键适配；适配范围包含建筑轮廓、结合点与廊桥节点。
 - 建筑内部拖动执行整栋平移，顶点拖动只改变轮廓；整栋平移保留稳定 ID、进入一次撤销记录，并同步依赖它的结合点和廊桥。
 - 主体操作归入“建筑主体编辑”，连廊操作归入“廊桥编辑”；主体模式明确命名为“建筑主体平面编辑”。
@@ -68,8 +72,9 @@
 - 主体模式与结合点/桥节点模式必须隔离：桥节点编辑不得修改或重建主体，主体平移时其上结合点必须跟随。
 - 提供强制原生窗口的独立细节视图，与原顶视图共享平面、选择、编辑模式、历史与重建结果；窗口内编辑必须驱动主场景联动。
 - 每栋建筑使用独立确定性随机流，局部编辑只替换受影响建筑；非法输入保留上一份有效显示并报告错误。
-- 建筑回归命令为 `godot --headless --path . -s scripts/tests/run_building_test.gd`，并纳入 `tools/run_gate.sh`。
-- 本原型不宣称已经完成正式 BuildingRecipe、槽位生产闭环、任意布尔开洞或城市级布局；这些仍按路线图后续阶段执行。
+- 建筑回归命令为 `godot --headless --path . -s scripts/tests/run_building_test.gd`，墙板回归为 `godot --headless --path . -s scripts/tests/run_wall_panel_test.gd`，均纳入 `tools/run_gate.sh`。
+- 墙板真实输入与截图复验命令为 `godot --path . -s scripts/tests/run_wall_panel_graphical_test.gd`，覆盖预览点击、模数键盘输入、确认融合、撤销和单栋重建隔离。
+- 本原型不宣称已经完成正式 BuildingRecipe、槽位生产闭环、任意布尔开洞或城市级布局；这些仍按路线图后续阶段执行。派生墙板同样只是预览/派生数据，不等同正式封闭发布资产。
 
 ## L0 资产任务当前基线
 - `surface_components` 面板顶部提供“资产任务”入口，打开“L0 资产任务与精度规范”窗口。

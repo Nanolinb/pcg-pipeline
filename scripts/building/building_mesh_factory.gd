@@ -92,15 +92,9 @@ static func extrude(polygon: PackedVector2Array, height: float, openings: Array 
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var indices := PackedInt32Array()
-	var by_edge: Dictionary = {}
+	var by_edge := _openings_by_edge(polygon.size(), openings)
 	var global_y_cuts: Array[float] = [0.0, height]
 	for opening in openings:
-		var edge_index: int = int(opening.get("edge_index", -1))
-		if edge_index < 0 or edge_index >= polygon.size():
-			continue
-		if not by_edge.has(edge_index):
-			by_edge[edge_index] = []
-		by_edge[edge_index].append(opening)
 		global_y_cuts.append(clampf(float(opening.get("y0", 0.0)), 0.0, height))
 		global_y_cuts.append(clampf(float(opening.get("y1", 0.0)), 0.0, height))
 	global_y_cuts = _unique_sorted(global_y_cuts)
@@ -113,36 +107,84 @@ static func extrude(polygon: PackedVector2Array, height: float, openings: Array 
 		if length <= 0.0001:
 			continue
 		var outward := Vector3(edge.y, 0.0, -edge.x).normalized()
-		if by_edge.has(index):
-			_add_opening_wall(vertices, normals, uvs, indices,
-				a, b, length, outward, height, by_edge[index], global_y_cuts)
-		else:
-			_add_opening_wall(vertices, normals, uvs, indices,
-				a, b, length, outward, height, [], global_y_cuts)
-	var triangles: PackedInt32Array
+		_add_opening_wall(vertices, normals, uvs, indices,
+			Vector3(a.x, 0.0, a.y), Vector3(edge.x / length, 0.0, edge.y / length),
+			length, outward, height, by_edge.get(index, []), global_y_cuts)
 	var cap_polygon := polygon
+	var triangles: PackedInt32Array
 	if openings.is_empty():
 		triangles = Geometry2D.triangulate_polygon(polygon)
 	else:
 		# 屋面/地面三角化使用带切口点的增广轮廓，使顶底棱边与墙面条带分段一致。
-		var augmented := PackedVector2Array()
-		for index in polygon.size():
-			augmented.append(polygon[index])
-			if by_edge.has(index):
-				var a2: Vector2 = polygon[index]
-				var b2: Vector2 = polygon[(index + 1) % polygon.size()]
-				var edge_length := a2.distance_to(b2)
-				if edge_length > 0.0001:
-					var s_cuts: Array[float] = []
-					for o in by_edge[index]:
-						s_cuts.append(clampf(float(o["s0"]), 0.0, edge_length))
-						s_cuts.append(clampf(float(o["s1"]), 0.0, edge_length))
-					s_cuts = _unique_sorted(s_cuts)
-					for s in s_cuts:
-						if s > 0.001 and s < edge_length - 0.001:
-							augmented.append(a2 + (b2 - a2) * (s / edge_length))
-		cap_polygon = augmented
-		triangles = Geometry2D.triangulate_polygon(augmented)
+		cap_polygon = _augmented_cap_polygon(polygon, by_edge)
+		triangles = Geometry2D.triangulate_polygon(cap_polygon)
+	_add_caps(vertices, normals, uvs, indices, cap_polygon, triangles, height)
+	return MeshBuildUtil.mesh(vertices, normals, uvs, indices)
+
+# 整栋屋顶/地面盖板（不含墙面）：分片显示模式用它保持整体外观封闭。
+static func caps(polygon: PackedVector2Array, height: float, openings: Array = []) -> ArrayMesh:
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var cap_polygon := polygon
+	var triangles: PackedInt32Array
+	if openings.is_empty():
+		triangles = Geometry2D.triangulate_polygon(polygon)
+	else:
+		cap_polygon = _augmented_cap_polygon(polygon, _openings_by_edge(polygon.size(), openings))
+		triangles = Geometry2D.triangulate_polygon(cap_polygon)
+	_add_caps(vertices, normals, uvs, indices, cap_polygon, triangles, height)
+	return MeshBuildUtil.mesh(vertices, normals, uvs, indices)
+
+# 单块墙板网格：局部 [0,width]×[0,height] 墙面，法线朝局部 +Z（放置基底的第三轴），
+# 开口仅 passage 使用，保留与整栋挤出一致的五面内凹洞道原语。
+static func wall_panel(width: float, height: float, openings: Array = []) -> ArrayMesh:
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var y_cuts: Array[float] = [0.0, height]
+	for opening in openings:
+		y_cuts.append(clampf(float(opening.get("y0", 0.0)), 0.0, height))
+		y_cuts.append(clampf(float(opening.get("y1", 0.0)), 0.0, height))
+	_add_opening_wall(vertices, normals, uvs, indices,
+		Vector3.ZERO, Vector3.LEFT, width, Vector3.BACK, height, openings, _unique_sorted(y_cuts))
+	return MeshBuildUtil.mesh(vertices, normals, uvs, indices)
+
+static func _openings_by_edge(edge_count: int, openings: Array) -> Dictionary:
+	var by_edge: Dictionary = {}
+	for opening in openings:
+		var edge_index: int = int(opening.get("edge_index", -1))
+		if edge_index < 0 or edge_index >= edge_count:
+			continue
+		if not by_edge.has(edge_index):
+			by_edge[edge_index] = []
+		by_edge[edge_index].append(opening)
+	return by_edge
+
+static func _augmented_cap_polygon(polygon: PackedVector2Array, by_edge: Dictionary) -> PackedVector2Array:
+	var augmented := PackedVector2Array()
+	for index in polygon.size():
+		augmented.append(polygon[index])
+		if by_edge.has(index):
+			var a2: Vector2 = polygon[index]
+			var b2: Vector2 = polygon[(index + 1) % polygon.size()]
+			var edge_length := a2.distance_to(b2)
+			if edge_length > 0.0001:
+				var s_cuts: Array[float] = []
+				for o in by_edge[index]:
+					s_cuts.append(clampf(float(o["s0"]), 0.0, edge_length))
+					s_cuts.append(clampf(float(o["s1"]), 0.0, edge_length))
+				s_cuts = _unique_sorted(s_cuts)
+				for s in s_cuts:
+					if s > 0.001 and s < edge_length - 0.001:
+						augmented.append(a2 + (b2 - a2) * (s / edge_length))
+	return augmented
+
+static func _add_caps(vertices: PackedVector3Array, normals: PackedVector3Array,
+			uvs: PackedVector2Array, indices: PackedInt32Array,
+			cap_polygon: PackedVector2Array, triangles: PackedInt32Array, height: float) -> void:
 	for index in range(0, triangles.size(), 3):
 		var a := cap_polygon[triangles[index]]
 		var b := cap_polygon[triangles[index + 1]]
@@ -153,17 +195,15 @@ static func extrude(polygon: PackedVector2Array, height: float, openings: Array 
 		MeshBuildUtil.add_face(vertices, normals, uvs, indices, PackedVector3Array([
 			Vector3(c.x, 0.0, c.y), Vector3(b.x, 0.0, b.y), Vector3(a.x, 0.0, a.y),
 		]), Vector3.DOWN, PackedVector2Array([c, b, a]))
-	return MeshBuildUtil.mesh(vertices, normals, uvs, indices)
 
 # 带门洞的立面：按全局高度带切水平条带（全宽，保证与相邻墙面/屋顶/地面的棱边完全对齐），
 # 洞口所在带内按 s 区间挖空，并为每个洞口生成五面内凹洞道（地面/顶/两侧/背板），保持封闭流形。
 # opening 字段：edge_index、s0/s1（沿边米制区间）、y0/y1（高度区间）、depth（内凹深度）。
+# base/dir 为立面局部坐标：base 为 s=0 的三维点，dir 为沿边单位方向。
 static func _add_opening_wall(vertices: PackedVector3Array, normals: PackedVector3Array,
 			uvs: PackedVector2Array, indices: PackedInt32Array,
-			a: Vector2, b: Vector2, length: float, outward: Vector3, height: float,
+			base: Vector3, dir: Vector3, length: float, outward: Vector3, height: float,
 			openings: Array, global_y_cuts: Array[float]) -> void:
-	var base := Vector3(a.x, 0.0, a.y)
-	var dir := Vector3((b.x - a.x) / length, 0.0, (b.y - a.y) / length)
 	var sorted: Array = openings.duplicate()
 	sorted.sort_custom(func(x, y): return float(x["s0"]) < float(y["s0"]))
 	# 该边所有洞口的 s 切点对全部高度带生效，保证相邻带的水平接缝棱边逐段对齐。
@@ -200,7 +240,8 @@ static func _add_opening_wall(vertices: PackedVector3Array, normals: PackedVecto
 			clampf(float(opening["s1"]), 0.0, length),
 			clampf(float(opening["y0"]), 0.0, height),
 			clampf(float(opening["y1"]), 0.0, height),
-			float(opening.get("depth", 0.45)))
+			float(opening.get("depth", 0.45)),
+			bool(opening.get("close_left", true)), bool(opening.get("close_right", true)))
 
 static func _emit_wall_quad(vertices: PackedVector3Array, normals: PackedVector3Array,
 			uvs: PackedVector2Array, indices: PackedInt32Array,
@@ -219,7 +260,8 @@ static func _wall_point(base: Vector3, dir: Vector3, s: float, y: float) -> Vect
 static func _add_tunnel(vertices: PackedVector3Array, normals: PackedVector3Array,
 			uvs: PackedVector2Array, indices: PackedInt32Array,
 			base: Vector3, dir: Vector3, outward: Vector3,
-			s0: float, s1: float, y0: float, y1: float, depth: float) -> void:
+			s0: float, s1: float, y0: float, y1: float, depth: float,
+			close_left: bool = true, close_right: bool = true) -> void:
 	var f0 := _wall_point(base, dir, s0, y0)
 	var f1 := _wall_point(base, dir, s1, y0)
 	var f2 := _wall_point(base, dir, s1, y1)
@@ -234,12 +276,14 @@ static func _add_tunnel(vertices: PackedVector3Array, normals: PackedVector3Arra
 	MeshBuildUtil.add_face(vertices, normals, uvs, indices,
 		PackedVector3Array([f3, b3, b2, f2]), Vector3.DOWN,
 		PackedVector2Array([Vector2(s0, 0), Vector2(s0, depth), Vector2(s1, depth), Vector2(s1, 0)]))
-	MeshBuildUtil.add_face(vertices, normals, uvs, indices,
-		PackedVector3Array([f0, b0, b3, f3]), dir,
-		PackedVector2Array([Vector2(0, y0), Vector2(depth, y0), Vector2(depth, y1), Vector2(0, y1)]))
-	MeshBuildUtil.add_face(vertices, normals, uvs, indices,
-		PackedVector3Array([f1, f2, b2, b1]), -dir,
-		PackedVector2Array([Vector2(0, y0), Vector2(0, y1), Vector2(depth, y1), Vector2(depth, y0)]))
+	if close_left:
+		MeshBuildUtil.add_face(vertices, normals, uvs, indices,
+			PackedVector3Array([f0, b0, b3, f3]), dir,
+			PackedVector2Array([Vector2(0, y0), Vector2(depth, y0), Vector2(depth, y1), Vector2(0, y1)]))
+	if close_right:
+		MeshBuildUtil.add_face(vertices, normals, uvs, indices,
+			PackedVector3Array([f1, f2, b2, b1]), -dir,
+			PackedVector2Array([Vector2(0, y0), Vector2(0, y1), Vector2(depth, y1), Vector2(depth, y0)]))
 	MeshBuildUtil.add_face(vertices, normals, uvs, indices,
 		PackedVector3Array([b0, b1, b2, b3]), outward,
 		PackedVector2Array([Vector2(s0, y0), Vector2(s1, y0), Vector2(s1, y1), Vector2(s0, y1)]))

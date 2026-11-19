@@ -62,6 +62,9 @@ var bridge_info_label: Label
 var floors_spin: SpinBox
 var floor_height_spin: SpinBox
 var seed_spin: SpinBox
+var panel_preview_check: CheckBox
+var panel_width_spin: SpinBox
+var fuse_panels_button: Button
 var connector_floor_spin: SpinBox
 var tension_spin: SpinBox
 var node_height_spin: SpinBox
@@ -200,7 +203,7 @@ func _build_ui() -> void:
 	_button(left, "打开独立细节窗口", _open_detail_window)
 	_button(left, "新增面岛 / 建筑", _add_footprint)
 	_button(left, "循环切分选中面岛", _split_selected)
-	fusion_button = _button(left, "融合选中建筑", _fuse_selected)
+	fusion_button = _button(left, "融合选中建筑轮廓", _fuse_selected)
 	fusion_button.disabled = true
 	_button(left, "删除选中面岛", _delete_selected)
 	_add_hint(left, "Shift+单击可多选建筑；至少两栋轮廓相交/相接时才能融合。")
@@ -253,9 +256,13 @@ func _build_ui() -> void:
 	right_margin.add_theme_constant_override("margin_right", 12)
 	right_margin.add_theme_constant_override("margin_top", 10)
 	right_panel.add_child(right_margin)
+	var right_scroll := ScrollContainer.new()
+	right_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right_margin.add_child(right_scroll)
 	var right := VBoxContainer.new()
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.add_theme_constant_override("separation", 10)
-	right_margin.add_child(right)
+	right_scroll.add_child(right)
 	_add_heading(right, "建筑参数")
 	selected_label = Label.new()
 	selected_label.add_theme_color_override("font_color", Color("f4cf83"))
@@ -267,6 +274,19 @@ func _build_ui() -> void:
 	seed_spin = _spin_row(right, "细节种子", 0.0, 9999.0, 1.0)
 	seed_spin.value_changed.connect(_on_seed_changed)
 	_add_hint(right, "种子修改后立即自动重建，无需应用按钮。\n每栋建筑使用独立随机流，不影响其他建筑。")
+	_add_heading(right, "墙板与融合")
+	panel_preview_check = CheckBox.new()
+	panel_preview_check.text = "墙板单元预览"
+	panel_preview_check.tooltip_text = "开启后按槽位分板并以细缝显示单元边界；细缝仅用于预览，确认融合后恢复整栋墙面。切换与模数修改均可撤销。"
+	panel_preview_check.focus_mode = Control.FOCUS_NONE
+	panel_preview_check.toggled.connect(_on_panel_preview_toggled)
+	right.add_child(panel_preview_check)
+	panel_width_spin = _spin_row(right, "墙板模数（米）", 0.8, 4.0, 0.05)
+	panel_width_spin.tooltip_text = "派生墙板布局的宽度基准，默认 1.75 m；工程默认值而非美术冻结模数，可在 0.8～4.0 m 内调整。"
+	panel_width_spin.value_changed.connect(_on_wall_panel_width_changed)
+	fuse_panels_button = _button(right, "确认并融合整栋墙板", _on_fuse_panels_confirmed)
+	fuse_panels_button.tooltip_text = "确认当前墙板布局并恢复整栋融合墙板显示；仅切换墙面显示与派生布局，不合并建筑轮廓，也不改变平面、组件与廊桥。"
+	_add_hint(right, "模数只调整派生墙板，不改变门窗与廊桥。\n预览与确认融合都可撤销，且只重建选中建筑。\n合并不同建筑请使用左侧“融合选中建筑轮廓”。")
 	_add_heading(right, "桥节点编辑")
 	tension_spin = _spin_row(right, "转弯强度", 0.0, 3.0, 0.05)
 	tension_spin.value_changed.connect(_on_tension_changed)
@@ -863,6 +883,10 @@ func _update_inspector() -> void:
 	floors_spin.editable = enabled
 	floor_height_spin.editable = enabled
 	seed_spin.editable = enabled
+	if panel_preview_check != null:
+		panel_preview_check.disabled = not enabled
+		panel_width_spin.editable = enabled
+		fuse_panels_button.disabled = not enabled or footprint.wall_panels_fused
 	if not enabled:
 		selected_label.text = "未选择建筑"
 		_last_param_snapshot = {}
@@ -871,6 +895,8 @@ func _update_inspector() -> void:
 	floors_spin.set_value_no_signal(footprint.floors)
 	floor_height_spin.set_value_no_signal(footprint.floor_height)
 	seed_spin.set_value_no_signal(footprint.seed)
+	panel_preview_check.set_pressed_no_signal(not footprint.wall_panels_fused)
+	panel_width_spin.set_value_no_signal(footprint.wall_panel_width)
 	_last_param_snapshot = _footprint_snapshot(footprint)
 
 func _update_stats() -> void:
@@ -878,9 +904,14 @@ func _update_stats() -> void:
 		return
 	var components := 0
 	var triangles := 0
+	var wall_panels := 0
+	var panel_preview_buildings := 0
 	for node in building_nodes.values():
 		components += int(node.get_meta("component_count", 0))
 		triangles += int(node.get_meta("triangle_count", 0))
+		wall_panels += int(node.get_meta("wall_panel_count", 0))
+		if not bool(node.get_meta("wall_panel_fused", true)):
+			panel_preview_buildings += 1
 	var bridges := 0
 	var junctions := 0
 	if skybridge_root != null:
@@ -892,8 +923,9 @@ func _update_stats() -> void:
 				"skybridge_junction":
 					junctions += 1
 					triangles += MeshBuildUtil.triangle_count(child.mesh)
-	stats_label.text = "%d 个面岛 / 建筑\n%d 个标准组件实例\n%d 条廊桥 · %d 个交叉合并结构\n约 %d 个三角形（含实例）" % [
-		building_nodes.size(), components, bridges, junctions, triangles]
+	stats_label.text = "%d 个面岛 / 建筑\n%d 个标准组件实例\n%d 条廊桥 · %d 个交叉合并结构\n%d 块派生墙板 · %d 栋分板显示\n约 %d 个三角形（含实例）" % [
+		building_nodes.size(), components, bridges, junctions, wall_panels,
+		panel_preview_buildings, triangles]
 
 func _on_building_move_started(id: StringName) -> void:
 	if not plan_editor.selected_ids.has(id):
@@ -938,6 +970,30 @@ func _on_floor_height_changed(value: float) -> void:
 
 func _on_seed_changed(value: float) -> void:
 	_change_parameter("seed", int(value))
+
+func _on_panel_preview_toggled(pressed: bool) -> void:
+	var footprint := plan.get_footprint(selected_id)
+	if footprint == null:
+		return
+	_change_parameter("wall_panels_fused", not pressed)
+	if pressed:
+		status_label.text = "已开启 %s 的墙板单元预览：按槽位分板显示整栋墙面，可改墙板模数后再确认融合。" % selected_id
+	else:
+		status_label.text = "已恢复 %s 为整栋融合墙板（DerivedSolid）显示；平面、组件与廊桥不受影响。" % selected_id
+
+func _on_wall_panel_width_changed(value: float) -> void:
+	_change_parameter("wall_panel_width", value)
+
+func _on_fuse_panels_confirmed() -> void:
+	var footprint := plan.get_footprint(selected_id)
+	if footprint == null:
+		status_label.text = "请先选择需要确认融合墙板的建筑。"
+		return
+	if footprint.wall_panels_fused:
+		status_label.text = "%s 已是整栋融合墙板显示，无需再确认；如需分板显示请勾选“墙板单元预览”。" % selected_id
+		return
+	_change_parameter("wall_panels_fused", true)
+	status_label.text = "已确认并融合 %s 的整栋墙板：恢复 DerivedSolid 显示；未合并建筑轮廓，平面、组件与廊桥不变，可撤销。" % selected_id
 
 func _change_parameter(property: StringName, value: Variant) -> void:
 	var footprint := plan.get_footprint(selected_id)
@@ -1111,6 +1167,8 @@ func _footprint_snapshot(footprint: PCGBuildingFootprint) -> Dictionary:
 		"polygon": footprint.polygon.duplicate(), "floors": footprint.floors,
 		"floor_height": footprint.floor_height, "seed": footprint.seed,
 		"wall_color": footprint.wall_color, "wall_material_id": footprint.wall_material_id,
+		"wall_panel_width": footprint.wall_panel_width,
+		"wall_panels_fused": footprint.wall_panels_fused,
 	}
 
 func _register_footprint_action(name: String, id: StringName, before: Dictionary, after: Dictionary, merge_key: StringName = &"") -> void:
